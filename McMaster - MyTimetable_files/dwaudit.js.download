@@ -1,0 +1,789 @@
+var DWA	 = (function() {
+	var my = {};	
+
+	var auditPromise = null;
+	var auditPromiseForTerm = null;
+	
+	my.loadAudits = function () {
+		var term=BB.activeState.term;
+		if (auditPromise && auditPromiseForTerm==term) {
+			console.log("Already requested DW Audit for term "+term);
+			return;
+		}
+		console.log("Requesting DW Audit...");
+		auditPromise = $.get('api/v2/dw-audit', {term:term}, function(data) {
+			auditPromiseForTerm = term;
+			console.log("DW Audit response received.");
+		});
+	}
+	
+	var loadData = function(audits) {
+		if (audits.length == 1) {
+			my.loadAudit(audits[0].institution, audits[0].school, audits[0].degree);
+			return;
+		}
+		
+		// Try grouping the good audits by response
+		var goodSimilarAudits={};
+		var haveGood=false;
+		for (var i=0;i<audits.length;i++) {
+			var a=audits[i];
+			if (!a.response.startsWith("Error:")) {
+				haveGood=true;
+				if (!goodSimilarAudits[a.response]) {
+					goodSimilarAudits[a.response]=[];
+				}
+				goodSimilarAudits[a.response].push(a);
+			}
+		}
+		
+		// Count good ones
+		var q=0;
+		for (var r in goodSimilarAudits) {
+			q++;
+		}
+		
+		$("#auditCounter").text("("+q+")");
+		
+		if (q==0) {
+			// No good audits. Show a bad one.
+			my.loadAudit(audits[0].institution, audits[0].school, audits[0].degree);
+		}
+		
+		var buttonsHtml="";
+		for (var r in goodSimilarAudits) {
+			var sAudits=goodSimilarAudits[r];
+			
+			if (q==1) {
+				// One good similar audit. Just load this one now.
+				my.loadAudit(sAudits[0].institution, sAudits[0].school, sAudits[0].degree);
+				return; // Note
+			}
+			
+			var auditLabel="";
+			for (var i=0;i<sAudits.length;i++) {
+				var audit=sAudits[i];
+				if (i>0) auditLabel+=" and ";
+				auditLabel+=MM.collegeToDescr(audit.institution) + ": "+ audit.degreeDescription + " (" + audit.school + ")";
+			}
+			$('#dwaudit-selection').show();
+			$('#dwaudit-content').hide();
+			
+			buttonsHtml += 
+				'<button class="mdl-button mdl-js-button mdl-button--raised mdl-button--accent"' +   
+						'onclick="DWA.loadAudit(\''+sAudits[0].institution+'\', \''+sAudits[0].school+'\', \''+sAudits[0].degree+'\');">' +
+					auditLabel +
+				'</button>';
+		}
+		
+		$('.dwaudit-selection-options').html(buttonsHtml);
+		
+	}
+	
+	my.loadAuditHtml = function(institution, school, degree) {
+		$('#dwaudit-selection').hide();
+		$('#dwaudit-content').show();
+
+		if (!auditPromise) {
+			console.error("No DegreeWorks Audit(s) found for enabled terms.");
+			return;
+		}
+
+	    // Select 'Still Needed' tab
+	    $('.vsb_tab_button.tabtab_needed').click();
+	    
+		auditPromise.then(function(audits){
+			audits = audits.filter(function(a) {
+				return a.institution === institution && a.school === school && a.degree === degree;
+			});
+			
+			if (audits.length === 0) {
+				console.error("No audit found for institution '"+institution+"' and school '" + school + "' and degree '" + degree + "'.");
+				return;
+			}
+			
+			if (audits.length > 1) {
+				console.error("Multiple audits found for institution '"+institution+"' and school '" + school + "' and degree '" + degree + "'.");
+				return;
+			}
+			
+			var data = audits[0].response;
+			
+			if (data.startsWith("Error:")) {
+				$('#dwaudit-error').show();
+				$('#dwaudit-content').hide();
+				return;
+			}
+			$('#tab_audit').html(atob(data));
+
+			$('#tab_needed').html(atob(data));
+			$('#tab_needed').find("a").each(function() {
+				var id = $(this).attr("id");
+				var href = $(this).attr("href");
+
+				if (id) {
+					$(this).attr("id", "needed-"+id);
+				}
+				if (href && href.indexOf("#") === 0) {
+					href=href.split("#")[1]
+					$(this).attr("href", "#needed-"+href);
+				}
+			});
+			
+			var n=0;
+			$('.RuleLabelData').each(function() {
+				$(this).addClass("n-"+n);
+				n++;
+			});
+			
+//			//Select only one block - for development only
+//			var only = $('.Blocks:contains("Major in Civil Engineering")');
+//			$('#frmAudit').empty();
+//			$('#frmAudit').append(only);
+			
+			var selectHtml = $('<div></div>');
+			
+			$(".RuleAdviceData").each(function(item){
+				$(this).contents()
+            		.filter(function() { return this.nodeType == 3; })
+            		.replaceWith('');
+			});
+			$(".RuleAdviceData > b").each(function(item){
+				$(this).append("&nbsp;Credits in ");
+			});
+			
+			
+			$(".RuleAdviceData > span").each(function (item) {
+				$(this).addClass("vsb-dw-audit-select");
+			});
+			
+			//identify except classes relative to their order with except element and alter
+			//class to identify them uniquely for downstream processing
+			$(".RuleAdviceData").each(function() {
+				var except = $(this).find('u');
+				if (except.html() === 'Except') {
+					var nextSpans = except.nextAll("span");
+					nextSpans.each(function(){
+						$(this).removeClass("vsb-dw-audit-select");
+						$(this).addClass("vsb-dw-audit-except");
+					});
+				}
+			});
+			
+			$(".vsb-dw-audit-select").each(function (item) {
+				// Wrap in a div
+				var parent = $(this).parent();
+				var div = $('<div></div>');
+				div.addClass("vsb-dw-audit-select-item");
+				parent.append(div)
+				
+				var course = $(this).html().trim();
+
+				if ($(this).find('b').length > 0) {
+					div.addClass('class-section');
+					var section = $(this).find('b').html(); 
+					div.attr('data-section', section);
+				} else {
+					var section = div.prevAll('.class-section').first().attr('data-section');
+					course = section + ' ' + course;
+					$(this).prepend('<b>' + section + '</b>&nbsp;')
+				}
+				
+				course = DWA.parseClassFromHtml(course);
+				
+				$(this).remove();
+				var labelDiv = $('<div></div>');
+				labelDiv.addClass('dw-label-panel');
+				labelDiv.append($(this));
+				div.append(labelDiv);
+//					.append($(this));
+				
+
+				// Add select/remove buttons
+//				console.log({auditRequirement:item});
+				var buttonsDiv = $('<div></div>');
+				buttonsDiv.addClass('dw-button-panel');
+				buttonsDiv.append("<button class='mdl-button mdl-js-button mdl-button--raised white-background dw-class-select' onclick='DWA.add(this, event)' data-course='"+course+"' aria-label='select "+course+"'> select </button>")
+				buttonsDiv.append("<button class='mdl-button mdl-js-button mdl-button--raised dw-class-remove' onclick='DWA.remove(this, event)' data-course='"+course+"' aria-label='remove "+course+"'> remove </button>")
+				div.append(buttonsDiv);
+				// Show correct select/remove button
+				if (selection.indexOf(course) >= 0) {
+					buttonsDiv.find('.dw-class-remove').show();
+					buttonsDiv.find('.dw-class-select').hide();
+				} else {
+					buttonsDiv.find('.dw-class-remove').hide();
+					buttonsDiv.find('.dw-class-select').show();
+					
+				}
+			});
+			
+			// Handle 'Except' classes
+			$(".RuleAdviceData").each(function() {
+				var except = $(this).find('u');
+				
+				if (except.html() === 'Except') {
+					var div = $('<div></div>');
+					div.addClass('dw-except-panel')
+					var a = except.siblings('a');
+					//For 5.X DW Audits and above
+					var exceptSpans = except.siblings(".vsb-dw-audit-except");
+					exceptSpans.remove();
+					a.remove();
+					except.remove();
+					div.append(except);
+					div.append("&nbsp;");
+
+					var length = a.length;
+
+					a.each(function(index) {
+						div.append($(this));
+						
+						if (index < length - 1) {
+							div.append(' or ');
+						}
+					});
+					
+					//DW 5.X version format
+					var section = "";
+					exceptSpans.each(function(index){
+						// Wrap in a div
+						var course = $(this).html().trim();
+						var exceptString = "";
+						if ($(this).find('b').length > 0) {
+							section = $(this).find('b').html();
+							exceptString = course; 
+						} else {
+							exceptString = section + ' ' + course;
+						}
+						div.append("<b>"+exceptString+"</b>");
+						if (index < exceptSpans.length - 1) {
+							div.append(' or ');
+						}
+					});
+				
+					$(this).append(div);
+				}
+			});
+			
+			// Responsive rules
+			// Popup width and height
+//			$('.CourseAppliedRowWhite').('vsb-dw-audit-requirement-row');
+			$(".vsb-dw-audit-select").parent().addClass('SelectableRuleAdviceData');
+
+			// Requirement Rows
+			$('.Blocks > tbody > tr').addClass('vsb-dw-audit-requirement-row');
+			// Still needed label
+			$('.RuleAdviceTitleNew').parent('tr').addClass('RuleAdviceTitleParent');
+			// Block Advice Title
+			$('.BlockAdviceTitle').parent('tr').addClass('BlockAdviceTitleParent');
+			// Nested requirement identation
+			$("img[src$='dwinvis2.gif']").parents('.vsb-dw-audit-requirement-row').addClass('level2');
+			
+			// Move student table 
+			var auditTable = $('#tab_audit .AuditTable');
+			$('#tab_summary').empty();
+			$('#tab_summary').append(auditTable);
+			$('#tab_needed .AuditTable').remove();
+			
+			auditTable.find('td.StuTableTitle').each(function(item){
+				var div = $('<div></div>');
+				$(this).parent().prepend(div);
+				div.addClass('dw-student-row');
+				div.prepend($(this).next());
+				div.prepend($(this));
+			});
+			
+			// Review Blocks
+			$('table.Blocks').each(function() {
+				if ($(this).parents("#tab_needed").length<=0) {
+					// Incomplete is okay for this block
+					return;
+				}
+				var incomplete=false;
+				$(this).find("img").each(function() {
+					if ($(this).attr("src").indexOf("dwcheckno")>=0) {
+						incomplete=true;
+					}
+				})
+				if (!incomplete) {
+					$(this).remove();
+				}
+			});
+			
+			// Collapsable rows
+			$('.vsb-dw-audit-requirement-row').each(function(){
+				var item = $(this);
+				
+				var $imgs=item.find("img[alt=Complete]");
+				if ($imgs.length>0) {
+					if ($imgs.parents("#tab_needed").length>0) {
+						// Found complete item. Remove it.
+						$(this).remove();
+						return;
+					}
+				}
+
+				if (!item.find('.RuleLabelData .RuleAdviceData').length) {
+					return;
+				}
+
+				item.addClass('expandable');
+				// Add expand arrow
+				var arrowLabel = item.find('.RuleLabelLine tr .RuleLabelTitleNeeded').html();
+				var arrowHtml = 							
+					'<button class="mdl-button mdl-js-button mdl-button--icon dw-audit-expand" aria-label="expand requirement '+arrowLabel+'">' +
+						'<i class="far fa-angle-down"></i>' +
+					'</button>';
+
+				item.find('.RuleLabelLine tr').append(arrowHtml);
+				
+				$(item).click(function(row) {
+					if ($(item).find('.RuleLabelData').is(':visible')) {
+						$(item).removeClass('expanded');
+						$(item).find('.dw-audit-expand').attr('aria-label', 'expand requirement '+arrowLabel);
+					} else {
+						$(item).find('.dw-audit-expand').attr('aria-label', 'collapse requirement '+arrowLabel);
+						$(item).addClass('expanded');
+					}
+					
+					var b;
+					$(item).nextUntil().each(function(){
+						if (b) {
+							return;
+						}
+						if ($(this).find('.RuleLabelLine .RuleLabelTitle').length) {
+							b = true;
+							return;
+						}
+						
+						$(this).find('.RuleLabelData').slideToggle("fast");
+					});
+					
+					$(item).find('.RuleLabelData').slideToggle("slow");
+				});
+				$(item).removeClass('expanded');
+			});
+			
+			$('.dw-audit-expand').click();
+			
+			// Wrap Legend items
+			$('.LegendItem').each(function(item){
+				var div = $('<div></div>');
+				$(this).parent().addClass('dw-legend-row-parent');
+				$(this).parent().append(div);
+				div.addClass('dw-legend-row');
+				div.prepend($(this).next());
+				div.prepend($(this));
+			});
+
+			
+			// Hide School Name 
+			$('.SchoolName').hide();
+			// Hide Legend 
+//			$('.LegendTitle').next().hide();
+			// Hide Legend Title 
+//			$('.LegendTitle').hide();
+			
+			//Hide Block Header Sub Title
+			$('.TableHead').each(function(item){
+//				$(this).find('.BlockHeadSubTitle').first().parents('table').first().hide();
+			});
+			
+			// Group BlockHeadSubTitle and BlockHeadSubData
+			$('.BlockHeadSubTitle').each(function(){
+				var div = $('<div></div>');
+				$(this).parent().addClass('BlockHeadSubTitleParent');
+				$(this).parent().append(div);
+				div.append($(this).next());
+				div.prepend($(this));
+			});
+			// Group BlockHead and BlockHeadTitle
+			$('.BlockHeadTitle').each(function(){
+				var div = $('<div></div>');
+				$(this).parent().addClass('BlockHeadTitleParent');
+				$(this).parent().prepend(div);
+				div.append($(this).prev());
+				div.append($(this));
+			});
+			
+			// Filter items in Still Needed tab
+			var itemsToHide = [];
+			$('#tab_needed .vsb-dw-audit-requirement-row').each(function(item){
+				item = $(this);
+
+				if (!item.find("img[src$='dwcheckno.png']").length) {
+//					itemsToHide.push(item);
+				};
+			});
+			
+			itemsToHide.forEach(function(item){
+					$(item).remove();
+			})
+			
+			//Hide xBlocks in tab needed
+			$('#tab_needed .xBlocks').hide();
+			
+			//Hide disclaimer
+			$('.DisclaimerText').parents('table').first().hide();
+
+			$('.vsb-dw-audit-requirement-row').each(function() {
+				$(this).addClass("n-"+n);
+				n++;
+			});
+		});
+		
+		// Tabs
+		// Set focus to first tab
+		$('.tabtab_summary').focus();
+		// Move focus to first tab after focus leave 'close' button
+	    $('.dwaudit_poopup_root').parent().next().find('.big_button').blur(function(){
+	    	$('.tabtab_summary').focus();
+	    });
+	    
+	    RR.updateFocus();
+	}
+	
+	my.loadAudit = function(institution, school, degree) {
+			my.loadAuditHtml(institution, school, degree);
+			return;
+			
+			// Note: It appears the below content is for the XML approach.
+			
+//			$('#dwaudit-selection').hide();
+//			$('#dwaudit-content').show();
+//
+//			if (!auditPromise) {
+//				console.error("No DW audit found for enabled terms.");
+//				return;
+//			}
+//			
+//			auditPromise.then(function(audits){
+//				audits = audits.filter(function(a) {
+//					return a.school === school && a.degree === degree;
+//				});
+//				
+//				if (audits.length === 0) {
+//					console.error("No audit found for school '" + school + "' and degree '" + degree + "'.");
+//					return;
+//				}
+//				
+//				if (audits.length > 1) {
+//					console.error("Multiple audits found for school '" + school + "' and degree '" + degree + "'.");
+//					return;
+//				}
+//				
+//				var data = audits[0].response;
+//				var auditHeader = data.Report.Audit.AuditHeader;
+//				var degreeInfo = data.Report.Audit.Deginfo.DegreeData;
+//				var goal = data.Report.Audit.Deginfo.Goal;
+//				
+//				$("#dw-progress").val(auditHeader.ResAppInProg);
+//				$("#dw-progress_text").html(auditHeader.ResAppInProg + "%");
+//				
+//				$("#dw_student").html(auditHeader.Stu_name);
+//				$("#dw_id").html(auditHeader.Stu_id);
+//				$("#dw_gpa").html(auditHeader.DWGPA);
+//				$("#dw_level").html(degreeInfo.Stu_levelLit);
+//				$("#dw_degree").html(degreeInfo.DegreeLit);
+//				$("#dw_school").html(degreeInfo.SchoolLit);
+//				
+//				data.Report.Audit.Block.forEach(function(b) {
+//					displayRequirements($("#tab_audit"), b, true, false);
+//					displayRequirements($("#tab_needed"), b, true, true);
+//				})
+//			});
+	}
+
+	var displayCompleted = function(tab, data, expand) {
+		var completedCourses = data.filter(function(c) { return c.Passed === "Y";})
+			.map(function(c) {
+				return {Disc:c.Discipline, Num:c.Number};	
+			});
+		
+		if (completedCourses.length === 0) {
+			return;
+		}
+		
+		displayCourseGroup(tab, {Label:"Completed", Requirement:{Course:completedCourses}}, false, 100);
+	};
+	
+
+	var displayRequirements = function(tab, data, expand, filterCompleted) {
+		var all = [];
+
+		var rules;
+		
+		if (data.Rule && data.Rule.Rule && data.Rule.Rule.length) {
+			rules = data.Rule.Rule;
+		} else if (data.Rule && data.Rule.length){
+			rules = data.Rule;
+		} else {
+			return all;
+		}
+		
+		var blockHeader = "<div id='block_"+data.Req_id+"' class='audit-block-header'>"; 
+		blockHeader += data.Title + "</div>"; 
+		blockHeader += "</div>";
+		
+		tab.append(blockHeader);
+		
+		var addedItem = false;
+		
+		rules.forEach(function(r) {
+				var isCompleted = r.Per_complete === 100;
+				
+				if (filterCompleted && isCompleted) {
+					return;
+				}
+				
+				all.push(r);
+				var courseGroup = displayCourseGroup(tab, r, false, r.Per_complete);
+				
+				if (courseGroup) {
+					addedItem = true;
+				}
+				
+				if (courseGroup && expand) {
+//					courseGroup.find(".dw-class-group-content").toggle(true);
+					expand = false;
+				}
+				
+				all = all.concat(displayRequirements(tab, r, expand));
+		});
+		
+		if (!addedItem) {
+			tab.find("#block_"+data.Req_id).remove();
+		}
+		
+		return all;
+	};
+	
+	var displayCourseGroup = function(tab, classGroup, expand, completed){
+//		console.log({classGroup: classGroup});
+//		console.log({completed: completed});
+		var requirement = classGroup.Requirement;
+		
+		if (requirement.IfPart) {
+			console.log("If Statement")
+			return;
+		}
+		
+		var cloneGroup = $(".dw-class-group").first().clone();
+		cloneGroup.find(".dw-class-group-title").html(classGroup.Label)
+		tab.append(cloneGroup);
+		cloneGroup.show();
+		cloneGroup.find(".dw-class-group-content").toggle(false);
+		
+		cloneGroup.find(".dw-check").toggle(completed === 100);
+		cloneGroup.find(".dw-partial").toggle(completed > 0 && completed < 100);
+		cloneGroup.find(".dw-uncheck").toggle(completed === 0);
+ 
+		if ((!requirement || !requirement.Course) && (completed === "Not Used" || completed < 100)) {
+			cloneGroup.find(".dw-class-group-title").css('opacity', '0.4');
+			cloneGroup.find(".dw-class-group-content").remove();
+			return cloneGroup;
+		}
+		if (completed === 100) {
+			cloneGroup.find(".dw-class-group-title").css('opacity', '0.4');
+			cloneGroup.find(".dw-class-group-content").remove();
+			return cloneGroup;
+		}
+
+		cloneGroup.find(".dw-class-group-content")
+			.find(".dw-class-group-empty").remove();
+		
+		if (!classGroup.Requirement.Course.forEach) {
+			displayCourse(classGroup.Requirement.Course, cloneGroup, completed);
+		} else {
+			classGroup.Requirement.Course.forEach(function(c) {displayCourse(c, cloneGroup, completed);});
+		}
+		
+		return cloneGroup;
+	}
+	
+	var displayCourse = function(course, group, completed) {
+		var cloneCourse = group.find(".dw-class-row").first().clone();
+		cloneCourse.find(".dw-class").html(course.Disc + " " + course.Num);
+		cloneCourse.show();
+		group.find(".dw-class-group-content").append(cloneCourse);
+		cloneCourse.find(".dw-class-select").attr('data-course', course.Disc + "-" + course.Num);
+		cloneCourse.find(".dw-class-remove").attr('data-course', course.Disc + "-" + course.Num);
+		
+		var isSelected = selection.filter(function(s){return s === course.Disc + "-" + course.Num})
+			.length > 0;
+		
+		cloneCourse.find(".dw-class-select").toggle(!completed && !isSelected);
+		cloneCourse.find(".dw-class-remove").toggle(!completed && isSelected);
+	}
+	
+	my.getGoal = function(data, code, valueField){
+		var goal = data.filter(function(g){
+			return g.Code === code;
+			});
+		
+		if (goal) {
+			return goal[0][valueField];
+		} else {
+			return "N.A.";
+		}
+	}
+	
+	var selection;
+	
+	my.showPopup2 = function() {
+		
+		if (dwAuditApiPullOnDemand) {
+			my.loadAudits();
+		}
+		
+		selection = BB.activeState.cnfs.map(function(cnf){
+			return cnf.cnKey;
+		});
+		
+		$.get('dw_audit_import.jsp', {term:BB.activeState.term}, function(html) {
+			// Buttons
+			var buttons = [
+				{
+					name: "Close",
+					action: function() { }
+				}
+			];
+			
+			// Show popup
+			RR.popNotice(html, buttons, function() {}, i8n.dwAuditImport, true, i8n.auditDisclaimer);
+			
+			componentHandler.upgradeDom();
+			
+			auditPromise.then(function data(audits) {
+				$('#dwaudit-loading').hide();
+				
+				if (!audits || audits.length == 0) {
+					$('#dwaudit-empty').show();
+				} else {
+					loadData(audits);
+				}
+			});
+			
+		})
+		// Log an error if the request fails
+		.fail(function(data) {
+			console.error("Failed to obtain DW Audit Import content");
+		});
+	}
+	
+	my.toggle = function(item) {
+		var fieldSet = $(item).find('fieldset');
+		fieldSet.slideToggle("slow");
+	}
+	
+	my.showPopup = function() {
+		var selection = BB.activeState.cnfs.map(function(cnf){
+			return cnf.cnKey;
+		});
+		
+		window.dispatchEvent(new CustomEvent('open-popup', {detail:{value:selection}}));
+	}
+	
+	my.parseClassFromHtml = function(item) {
+		return item.replace(/<.*?>/g, "").replace(/\s/g, "-").replace(/&nbsp;/g, "-");
+	}
+	
+	my.add = function(item, event) {
+		event.stopPropagation();
+		$(item).prop('disabled', true);
+		$(item).html('Selecting...');
+		var course = item.getAttribute('data-course');
+		console.log("Adding course '" + course + "'");
+
+		if (course.indexOf('@') >= 0 && course.split(' ').length == 2) {
+			course += " @";
+		}
+		
+		var lengthBefore = BB.activeState.cnfs.length;
+		
+		UU.caseAddCourses(course, function(){
+			var lengthAfter = BB.activeState.cnfs.length;
+			var added = lengthAfter > lengthBefore; 
+			
+			if (added) {
+				$(item).hide();
+				$(item).siblings(".dw-class-remove").show();
+				$(item).prop('disabled', false);
+				var successDiv = $('<div role="alert"></div>');
+				successDiv.addClass('dw-select-success')
+				successDiv.append("Added course " + course);
+				$(item).parent().parent().append(successDiv);
+				
+				setTimeout(function(){
+					successDiv.fadeOut(function(){
+						successDiv.remove();
+					});
+				}, 4000);
+			} else {
+				var error = "Could not add course '" + course + "'"; 
+				
+				$('.warningNoteBad').each(function (){
+					var msg = $(this).html(); 
+					if (msg.toLowerCase().replace(/-/g, " ").indexOf(course.toLowerCase().replace(/-/g, " ")) > -1) {
+						error = msg;
+					}
+				});
+				
+				var errorDiv = $('<div role="alert"></div>');
+				errorDiv.addClass('dw-select-error')
+				errorDiv.append(error);
+				$(item).parent().parent().append(errorDiv);
+			}
+
+			$(item).html('Select');
+		},false,false,false,"",null,true);
+
+
+	}
+
+	my.remove = function(item, event) {
+		event.stopPropagation();
+		$(item).hide();
+		$(item).siblings(".dw-class-select").show();
+		
+		var course = item.getAttribute('data-course');
+		console.log("Removing course '" + course + "'");
+
+		//		TODO Handle remove wildcard
+//		if (course.indexOf('@') >= 0 && course.split(' ').length == 2) {
+//			course += " @";
+//		}
+		
+		var lengthBefore = BB.activeState.cnfs.length;
+
+		BB.activeState.cnfs.forEach(function(cnf){
+			if (cnf.cnKey === course || 
+					(cnf.reqId && cnf.reqId.replace(" ", "-") === course)) {
+				UU.caseRemoveCourse(cnf.cnfid);
+			}
+		});	
+	
+		var lengthAfter = BB.activeState.cnfs.length;
+		var removed = lengthAfter < lengthBefore; 
+		
+		var successDiv = $('<div role="alert"></div>');
+
+		if (removed) {
+			successDiv.addClass('dw-select-success');
+			successDiv.append("Removed course " + course);
+		} else {
+			successDiv.addClass('dw-select-error');
+			successDiv.append("Failed to remove course " + course);
+		}
+		
+		$(item).parent().parent().append(successDiv);
+		
+		setTimeout(function(){
+			successDiv.fadeOut(function(){
+				successDiv.remove();
+			});
+		}, 4000);
+	}
+	
+	return my;
+}());

@@ -1,0 +1,446 @@
+"use strict";
+
+// Guidance module
+var GG = (function() {
+	var my = {};
+
+	my.blockedTerms={};
+	my.noSelectCourseTerms={};
+	
+	my.isActiveTermBlocked = function() {
+		if (isAdvisor && advisorCanBypassTermBlock) return false;
+		//if term hs(hold severity) is not F(Fatal) then term should not be blocked
+		if(EE.terms[BB.activeState.term] && EE.terms[BB.activeState.term].hs 
+				&& EE.terms[BB.activeState.term].hs != 'F') {
+			return false;
+		}
+		return GG.blockedTerms["0"] || GG.blockedTerms[BB.activeState.term];
+	}
+
+	my.isActiveTermNoSelect = function() {
+		return !(!GG.noSelectCourseTerms[BB.activeState.term]) || (!isAuthenticated && noSelectWhenGuest);
+	}
+	
+	my.trmAc={};
+	my.notes={};
+	my.holds={};
+	my.holdsTypes={};
+	my.dates={};
+	my.institutions=[];
+
+	my.guidanceSettle = function() {
+		PAGES.settleWindow();
+
+		// Update button (since it may already be showing)
+		if (my.isActiveTermBlocked()) {
+			$(".button_get_schedule").prop("disabled",true).attr("title",i8n.cannotEnroll);	
+		}
+		
+		RR.settlePlusBox(); // in case process() fails or is slow
+	}
+	
+	my.guidanceInit = function(name,terms,id,testName) {
+		
+		if (hideGuidance || name==null || name=="" || name=="null" || terms.length==0) {
+			return $.Deferred().resolve();
+		}
+	
+		var $loc=$(id);
+		
+		var testParam="";
+		if (testName) {
+			testParam="&test="+testName;
+		}
+		
+		return $.getJSON("api/v2/studentdetail?terms="+terms.join(",")+testParam,function(st) {
+			//console.log("studentdetails st: "+st);
+			EE.studentDetail = st;
+			
+			// Collect Student Groups
+			var studentGroups={}
+			if (st.studentGroups) {
+				for (var i=0;i<st.studentGroups.length;i++) {
+					var sg=st.studentGroups[i];
+					studentGroups[sg.group]=true;
+				}
+			}
+			EE.stuGps=studentGroups;
+			
+			if (!isAdvisor && blockUserBasedOnAttribute.length>0) {
+				if (studentGroups[blockUserBasedOnAttribute]) {
+					$("body").addClass("block-user");
+				}
+			}
+			
+			var globalHolds=getHoldsText(st.holds,0,true);
+			
+			if (globalHolds.html) {
+				if (!isAdvisor && blockUserByGlobalHold) {
+					$("body").addClass("block-user");
+				}
+				my.holds[0]=["<span class='term-selection-hold'>"+globalHolds.html+"</span>"];
+				my.holdsTypes[0]=globalHolds.types;
+			}
+						
+			var okSessions=[];
+			if ((typeof guidanceOkSessions !== 'undefined') && guidanceOkSessions.length>0) {
+				okSessions=guidanceOkSessions.split(",");
+			}
+			
+			for (var termi=0;termi<st.terms.length;termi++){
+				var term=st.terms[termi];
+				if (my.institutions.indexOf(term.term.institution) == -1) {
+					my.institutions.push(term.term.institution); 
+				}
+			}
+
+			var substance=false;
+			var lastName=null;
+			for (var termi=0;termi<st.terms.length;termi++) {
+				var term=st.terms[termi];
+				//console.log("Term: "+term);
+				var sentences=[];
+				var allSessionsSame=true;
+				
+				// If "guidanceOkSessions" VSB Property used, filter the sessions
+				var goodTermSessions=[];
+				for (var sessi=0;sessi<term.sessions.length;sessi++) {
+					var session=term.sessions[sessi];
+					if (okSessions.length>0) {
+						var found=(okSessions.length==0);
+						for (var i=0;i<okSessions.length;i++) {
+							if (okSessions[i]==session.session.schoolSessionCode) {
+								found=true;
+								break;
+							}
+						}
+						if (!found) continue;
+					}
+					goodTermSessions.push(session);
+				}
+				
+				var hasAppt=false;
+				var hasOpenDate=false;
+				
+				var s="";
+				
+				// Enrollment Appointments
+				var firstInst=null;
+				var moreThan1Inst=false;
+				var firstAcadCareer=null;
+				var moreThan1AcadCareer=false;
+				var moreThan1Appt=null;
+				var moreThan1OEDate=false;
+				var firstOEDate=null;
+				var lumpSessionsInto1=false;
+				s="";
+				for (var sessi=0;sessi<goodTermSessions.length&&!lumpSessionsInto1;sessi++) {
+					var session=goodTermSessions[sessi];
+					if (session.session.openEnrollmentDate) {
+						if (firstOEDate!=null && firstOEDate.code!=session.session.openEnrollmentDate.code) {
+							moreThan1OEDate=true;
+						}
+						firstOEDate=session.session.openEnrollmentDate;
+					}
+					for (var a=0;a<session.appointments.length;a++) {
+						var appt=session.appointments[a];
+						if (appt.schoolSessionCode==null) lumpSessionsInto1=true; // SIS (like Banner) that does not make appt(s) for each session
+						if (moreThan1Appt==false) moreThan1Appt=true;
+						if (moreThan1Appt==null) moreThan1Appt=false;
+						if (firstInst!=null && firstInst!=appt.institution) moreThan1Inst=true;
+						if (firstAcadCareer!=null && firstAcadCareer!=appt.academicCareer) moreThan1AcadCareer=true;
+						firstInst=appt.institution;
+						firstAcadCareer=appt.academicCareer;
+						
+						s+="<tr><td class='bullet'>&bull;</td>";
+						s+="<td class='inst'>"+appt.institution+"</td>";
+						s+="<td class='acadCareer'>"+appt.academicCareer+"</td>";
+						s+="<td class='session_desc'>"+(lumpSessionsInto1?"":sessionMassage(session.session.description))+"</td>"; // same as schoolSessionDescription
+						
+						if (appt.startDate&&appt.endDate) {
+							s+="<td>";
+							s+=getMonth(appt.startDate.month)+" "+appt.startDate.day+", "+appt.startDate.year+" ";
+							s+=formatTime(appt.startHour,appt.startMinute)+"</td>";
+							s+="<td> to </td><td>";
+							if (appt.startDate.code!=appt.endDate.code) {
+								s+=getMonth(appt.endDate.month)+" "+appt.endDate.day+", "+appt.endDate.year+" ";
+							}
+							s+=formatTime(appt.endHour,appt.endMinute);
+						} else {
+							s+="<td colspan='3'>&lt;No Appointment Date or Time Assigned&gt;";
+						}
+						s+="</td></tr>";
+						
+						// Unit Limits
+						if (appt.maxTotalUnit>=0) {
+						    s+="<td colspan='7'>";
+						    s+="<table class='term-data-appt-units'>";
+						    s+="<tr>";
+						    s+="<th rowspan='2'>Unit<br/>Limits</th><th>Max Total</th><th>Max No GPA</th><th>Max Audit</th><th>Max Wait List</th>";
+						    s+="</tr>";
+						    s+="<tr>";
+						    s+="<td>"+appt.maxTotalUnit+"</td>";
+						    s+="<td>"+appt.maxNogpaUnit+"</td>";
+						    s+="<td>"+appt.maxAuditUnit+"</td>";
+						    s+="<td>"+appt.maxWaitUnit+"</td>";
+						    s+="</tr>";
+						    s+="</table>";
+						    s+="</td>";
+						}
+					}
+				}
+				var tableAppt="";
+				if (s.length>0) {
+					tableAppt="<table class='term-data'><tr><th colspan='7'>"+i8n.enrollmentAppointmentLabel+(moreThan1Appt?"s":"")+":</th></tr>"+s+"</table>";
+				}
+				else if(i8n.defaultEnrollmentAppointmentLabel != ""){
+					tableAppt="<table class='term-data'>"+i8n.defaultEnrollmentAppointmentLabel+"</table>";
+				}
+				
+				// Open Enrollment Dates
+				s="";
+				for (var sessi=0;sessi<goodTermSessions.length;sessi++) {
+					var session=goodTermSessions[sessi];
+					if (!session.session.openEnrollmentDate) continue;
+					s+="<tr>";
+					s+="<td class='inst'>"+(moreThan1OEDate?session.session.institution:"")+"</td>";
+					s+="<td class='acadCareer'>"+(moreThan1OEDate?session.session.academicCareer:"")+"</td>";					
+					s+="<td class='session_desc'>"+(moreThan1OEDate?sessionMassage(session.session.description):"All Sessions")+"</td>";
+					s+="<td>"+getMonth(session.session.openEnrollmentDate.month)+" "+session.session.openEnrollmentDate.day+", "+session.session.openEnrollmentDate.year+"</td></tr>";
+					if (!moreThan1OEDate) break;
+				}
+				/*
+				console.log("moreThan1OEDate: "+moreThan1OEDate);
+				console.log("Session Institution: "+session.session.institution+", Academic Career: "+session.session.academicCareer)
+				console.log("Term Institution: "+term.term.institution+", Academic Career: "+term.acadCareerDesc)
+				console.log("Open Enrollment Dates: "+getMonth(session.session.openEnrollmentDate.month)+" "+session.session.openEnrollmentDate.day+", "+session.session.openEnrollmentDate.year)
+
+				console.log("term.term.displayStartDate: "+term.term.displayStartDate.month+"/"+term.term.displayStartDate.day+"/"+term.term.displayStartDate.year);
+				console.log("term.term.displayStartDate.code: "+term.term.displayStartDate.code+", todayCode: "+todayCode);
+				
+				console.log("term.term.displayEndDate: "+term.term.displayEndDate.month+"/"+term.term.displayEndDate.day+"/"+term.term.displayEndDate.year);
+				console.log("term.term.displayEndDate.code: "+term.term.displayEndDate.code+", todayCode: "+todayCode);
+				*/
+				// term-specific dates:
+				var m2d="";
+				if (term.term.displayStartDate && term.term.displayStartDate.code>todayCode) {
+					var dc=term.term.displayStartDate
+					m2d+="Not available to "+(isAdvising?"the student you are advising":"students") +" until "+getMonth2(dc.month%12)+" "+dc.day+", "+dc.year;
+				}
+				if (term.term.displayEndDate && term.term.displayEndDate.code<todayCode) {
+					var dc=term.term.displayEndDate
+					m2d+="Not available to "+(isAdvising?"the student you are advising":"students") +" since "+getMonth2(dc.month%12)+" "+dc.day+", "+dc.year;
+				}
+				if (m2d.length>0) {
+					m2d="<div class='term-selection-hold' id='"+term.visibleSchoolTermIds[0]+"_datesMsg'><span class='term-selection-info-item'><i class='fa fa-info-circle'></i> "+m2d+"</span></div>";
+				}
+				//console.log("Open Enrollment Display Text :"+s);
+				var tableOpen="";
+				if (s.length>0) {
+					var spanId=term.visibleSchoolTermIds[0]+"_instAcadCareer";
+					var spanText="";
+					//multiple institution
+					if(my.institutions.length>1 && term.term.institution){
+						spanText+=MM.collegeToDescr(term.term.institution);
+						if (term.acadCareerDesc) {
+							spanText+=" - ";
+						}
+					}
+					if (term.acadCareerDesc) { // can be null
+						spanText+=term.acadCareerDesc;
+					}
+					tableOpen="<table class='term-data open-enrollment-dates'><tr><th colspan='4'><div><div style='font-weight:bold;margin-top:10px' id='"+spanId+"'>"+spanText+"</div>"+m2d+"</div></th></tr><tr><th colspan='4'>Open Enrollment Date"+(goodTermSessions.length>1?"s":"")+":</th></tr>"+s+"</table>";
+				}
+				
+				// Term Enrollment Limits
+				s="";
+				for (var scti=0;scti<term.studentCareerTerms.length;scti++) {
+					var sct=term.studentCareerTerms[scti];
+					// Keyed on (Institution/AcadCareer/STRM) PROG/PLAN
+				    s+="<tr>";
+				    s+="<th rowspan='2'>Unit<br/>Limits</th><th>Max Total</th><th>Max No GPA</th><th>Max Audit</th><th>Max Wait List</th>";
+				    s+="</tr>";
+				    s+="<tr>";
+				    s+="<td>"+sct.maxTotalUnit+"</td>";
+				    s+="<td>"+sct.maxNogpaUnit+"</td>";
+				    s+="<td>"+sct.maxAuditUnit+"</td>";
+				    s+="<td>"+sct.maxWaitUnit+"</td>";
+				    s+="</tr>";
+				}
+				var tableLimits="";
+				if (s.length>0) {
+					tableLimits="<table class='term-data-appt-units'><tr><th colspan='4'>Term Enrollment Limits:</th></tr>"+s+"</table>";
+				}
+
+				var tableNames="";
+				var name=term.term.name;
+				if (lastName==null||lastName!=name) {
+					if (showTermNameInTermBox) {
+						tableNames+="<div class='term-data-name'>"+name+"</div>";
+					}
+				}
+				lastName=name;
+				
+				var m2="";
+				m2=tableNames+tableAppt+tableOpen;//+tableLimits; // wait until SQL fixed to read
+				
+				//console.log("tableOpen: "+tableOpen);
+				//console.log("dates m2d: "+m2d);
+				
+				// Remove columns that are always the same from the HTML
+				var $html=$('<div />',{html:m2});
+				if (!moreThan1Inst) {
+					$html.find("td.inst").remove();
+				}
+				if (!moreThan1AcadCareer) {
+					$html.find("td.acadCareer").remove();
+				}
+				if (!moreThan1Appt) {
+					$html.find("td.bullet").remove();
+				}
+				m2=$html.html();
+				
+				
+				// term-specific holds:
+				var m2h="";
+				var termHolds=getHoldsText(st.holds,+term.term.schoolTermId);
+				if (termHolds.html.length>0) {
+					m2h="<span class='term-selection-hold'>"+termHolds.html+"</span>";
+				}
+				
+				
+				term.visibleSchoolTermIds.forEach(function(visibleTerm) {
+				
+					if (term.studentCareerTerms && term.studentCareerTerms.length>0) {
+						// If this SIS term contains term-activation, tell its VSB/Visible Term(s) to indicate so.
+						my.trmAc[visibleTerm] = true;
+					} else if (st.onlyShowTermActivatedItems) {
+						return;
+					}
+				
+					if (!my.notes[visibleTerm]) {
+						my.notes[visibleTerm] = [];
+					}
+					if (!my.holds[visibleTerm]) {
+						my.holds[visibleTerm] = [];
+					}
+					if (!my.holdsTypes[visibleTerm]) {
+						my.holdsTypes[visibleTerm] = {};
+					}
+					if (!my.dates[visibleTerm]) {
+						my.dates[visibleTerm] = [];
+					}
+					if (my.notes[visibleTerm].indexOf(m2) == -1) {
+						my.notes[visibleTerm].push(m2); 
+					}
+					if (my.holds[visibleTerm].indexOf(m2h) == -1) {
+						my.holds[visibleTerm].push(m2h); 
+					}
+					for (var type in termHolds.types) {
+						my.holdsTypes[visibleTerm][type]=true; 
+					}
+					if (my.dates[visibleTerm].indexOf(m2d) == -1) {
+						my.dates[visibleTerm].push(m2d); 
+					}
+				});
+				
+				// term-specific career info
+				if (term.studentCareerTerms) {
+					for (var wi=0;wi<term.studentCareerTerms.length;wi++) {
+						var sct=term.studentCareerTerms[wi];
+						var block=false;
+						if (noSelectCourseLogic.length>0) {
+							block=eval(noSelectCourseLogic);
+						}
+						if (block) {
+							for (var vi=0;vi<term.visibleSchoolTermIds.length;vi++) {
+								var vterm=term.visibleSchoolTermIds[vi]; 
+								my.noSelectCourseTerms[vterm]=true;	
+							}
+						}
+					}
+				}
+				
+			} // Each SIS Term
+			
+			if (preventOutOfEnrollmentWindow) {
+				// pars.push("Note: Classes that are past their Add/Drop date will not be displayed"); // TODO Make this welcome text for KCTCS 
+			}
+	
+		});
+	}
+	
+	// Get hold for the given school term id (sti). Use sti=0 to get general holds.
+	function getHoldsText(holds,sti,attention) {
+		var now=(new Date()).getTime()
+		if (!holds || holds.length<=0) return {html:"",types:{}};
+		var t="";
+		var types={};
+		for (var i=0;i<holds.length;i++) {
+			var h=holds[i];
+			if (sti==0 && (+h.firstSchoolTermId!=0 || +h.lastSchoolTermId!=0)) {
+				continue;
+			}
+			if (sti<h.firstSchoolTermId) continue;
+			if (sti>h.lastSchoolTermId) continue;
+			if (!h.active) continue;
+			if (h.dateCreated>now) continue;
+			if (+h.dateExpiring!=0 && h.dateExpiring<now) continue;
+			if (!h.preventAdd && !h.preventSwap && !h.preventDrop && !showNonBlockingHolds) continue;
+			if (h.preventAdd && h.preventSwap && h.preventDrop) {
+				my.blockedTerms[sti]=true;
+			}
+			types[h.type]=true;
+			
+			var icon = h.preventTermSelection 
+				? "fa-minus-circle" 
+				: "fa-exclamation-triangle"
+			
+			var ti="<span class='term-selection-hold-item'"+(h.visible?"":" style='display:none'")+"><i class='fa " + icon + "'></i> ";
+			if (attention){
+				//ti+="Attention: ";
+			}
+
+			ti+=h.description+"</span>";
+			if (t.indexOf(ti)<0) {
+				t+=ti;
+			}
+		}
+		return {html:t,types:types};
+	}
+	
+	function Sentence(words,session) {
+		this.words=words;
+		this.session=session;
+		this.getText=function() {
+			return this.words.replace("s-s-s",this.session);
+		}
+	}
+	
+	
+	function formatTime(hour,min) {
+		var pm=false;
+		var dh=hour;
+		if (hour==0) {
+			dh=12;
+		} else if (hour==12) {
+			pm=true;
+		} else if (hour>12) {
+			dh-=12;
+			pm=true;
+		}
+		var dm=min;
+		if (dm<=9) dm="0"+dm;
+		return dh+":"+dm+(pm?"pm":"am");
+	}
+	
+	function sessionMassage(sessionDescr) {
+		if (sessionDescr.indexOf("Session")<0) {
+			return sessionDescr+" Session";
+		}
+		return sessionDescr;
+	}
+	
+	return my;
+	
+}());

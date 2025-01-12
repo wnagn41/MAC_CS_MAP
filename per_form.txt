@@ -1,0 +1,94 @@
+Summer 2024 Courses:
+--------------------------------------------------
+COMPSCI 1DM3 - Nancy Kansal
+COMPSCI 1JC3 - Bojan Nokovic
+COMPSCI 1MD3 - Sam Scott
+COMPSCI 1XC3 - pedram pasandide
+COMPSCI 4Z03 - TBA
+
+Fall 2024 Courses:
+--------------------------------------------------
+COMPSCI 1JC3 - William Farmer
+COMPSCI 1JC3 - Shahab Asoodeh
+COMPSCI 1MD3 - Vincent Maccio
+COMPSCI 1MD3 - Vincent Maccio
+COMPSCI 2C03 - Jelle Hellings
+COMPSCI 2C03 - George Karakostas
+COMPSCI 2GA3 - TBA
+COMPSCI 2LC3 - Wolfram Kahl
+COMPSCI 2ME3 - Irene Ye Yuan
+COMPSCI 2ME3 - TBA
+COMPSCI 3DP3 - Shahab Asoodeh
+COMPSCI 3GC3 - YingYing Wang
+COMPSCI 3MI3 - TBA
+COMPSCI 3O03 - Christopher Anand
+COMPSCI 3RA3 - Sebastien Mosser
+COMPSCI 3SH3 - Neerja Mhaskar
+COMPSCI 4AL3 - Swati Mishra
+COMPSCI 4CR3 - Javad Doliskani
+COMPSCI 4HC3 - Denise Geiskkovitch
+COMPSCI 4ML3 - Hassan Ashtiani
+COMPSCI 4O03 - Christopher Anand
+COMPSCI 4X03 - Matthew Giamou
+COMPSCI 4ZP6 - MEHDI MORADI
+MECHTRON 2MP3 - TBA
+MECHTRON 3K04 - TBA
+MECHTRON 3MX3 - Martin vonMohrenschildt
+MECHTRON 3X03 - Matthew Giamou
+MECHTRON 4AA4 - Wenbo He
+MECHTRON 4AX3 - Martin vonMohrenschildt
+MECHTRON 4TB6 - Alan Wassyng
+SFWRENG 2DA4 - Ryan Leduc
+SFWRENG 2DM3 - Ridha Khedri
+SFWRENG 2OP3 - Lingyang Chu
+SFWRENG 2XC3 - Sam Scott
+SFWRENG 3BB4 - Ryszard Janicki
+SFWRENG 3DB3 - Fei Chiang
+SFWRENG 3DP3 - Shahab Asoodeh
+SFWRENG 3GC3 - YingYing Wang
+SFWRENG 3K04 - TBA
+SFWRENG 3MX3 - Martin vonMohrenschildt
+SFWRENG 3O03 - Christopher Anand
+SFWRENG 3RA3 - Sebastien Mosser
+SFWRENG 4AA4 - Wenbo He
+SFWRENG 4AL3 - Swati Mishra
+SFWRENG 4G06 - Spencer Smith
+SFWRENG 4HC3 - Irene Ye Yuan
+SFWRENG 4X03 - Matthew Giamou
+
+Winter 2024 Courses:
+--------------------------------------------------
+COMPSCI 1DM3 - Javad Doliskani
+COMPSCI 1MD3 - Denise Geiskkovitch
+COMPSCI 1XD3 - Sam Scott
+COMPSCI 2AC3 - Hassan Ashtiani
+COMPSCI 2DB3 - Jelle Hellings
+COMPSCI 2SD3 - Ryszard Janicki
+COMPSCI 2XC3 - Swati Mishra
+COMPSCI 3AC3 - George Karakostas
+COMPSCI 3DM3 - Lingyang Chu
+COMPSCI 3TB3 - Emil Sekerinski
+COMPSCI 4E03 - Vincent Maccio
+COMPSCI 4EN3 - Christopher Anand
+COMPSCI 4LM3 - TBA
+COMPSCI 4SD3 - Sivan Sabato
+COMPSCI 4TB3 - Emil Sekerinski
+COMPSCI 4ZP6 - MEHDI MORADI
+MECHTRON 2MD3 - Stephen Kelly
+MECHTRON 2TA4 - Stephen Kelly
+MECHTRON 4TB6 - Alan Wassyng
+SFWRENG 2AA4 - ISTVAN DAVID
+SFWRENG 2C03 - Sam Scott
+SFWRENG 2FA3 - Vincent Maccio
+SFWRENG 2GA3 - Ryan Leduc
+SFWRENG 3A04 - Ridha Khedri
+SFWRENG 3BI3 - TBA
+SFWRENG 3DX4 - Onaizah Onaizah
+SFWRENG 3FP3 - Spencer Smith
+SFWRENG 3S03 - ISTVAN DAVID
+SFWRENG 3SH3 - Neerja Mhaskar
+SFWRENG 3SH3 - TBA
+SFWRENG 4C03 - Rong Zheng
+SFWRENG 4E03 - Vincent Maccio
+SFWRENG 4G06 - Spencer Smith
+

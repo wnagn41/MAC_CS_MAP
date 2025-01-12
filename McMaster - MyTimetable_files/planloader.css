@@ -1,0 +1,114 @@
+.imp-dialog0 {
+	display: table;
+	width: 100%;
+}
+
+.imp-dialog {
+	margin: 0 auto;
+	display: table-row;
+}
+
+.imp-list {
+	display: table-cell;
+	background-color: #FFFFFF;
+	min-width: 160px;
+	padding: 6px;
+}
+
+.imp-list-title {
+	padding: 0;
+	font-weight: bold;
+	margin-bottom: 6px;
+}
+
+.imp-choice-title {
+	font-weight: bold;
+	position: relative;
+	padding-left: 32px;
+	min-height: 38px;
+}
+
+.imp-list-course {
+	padding: 6px 6px 6px 12px;
+}
+
+.imp-template {
+	display: none;
+}
+
+.imp-chooser {
+	display: table-cell;
+	min-width: 300px;
+	height: 300px;
+	position: relative;
+}
+
+.imp-choice {
+	height: 100%;
+	position: absolute;
+	width: 100%;
+	right: 0;
+	top: 0;
+	box-sizing: border-box;
+	min-height: 300px;
+}
+
+.imp-choice-shadow {
+	padding: 6px;
+	box-shadow: -2px 0px 10px 0px rgba(0, 0, 0, 0.48);
+	background-color: #FFFFFF;
+	height: 100%;
+	box-sizing: border-box;
+	overflow-y: auto;
+}
+
+.imp-choice-plus {
+	font-size: 250%;
+	position: absolute;
+	font-weight: bold;
+}
+
+.imp-option {
+	background-color: #d8d8d8;
+	border-radius: 5px;
+	margin-top: 6px;
+	cursor: pointer;
+}
+
+.imp-option:hover {
+	background-color: #aaaaaa;
+}
+
+.imp-chosen, .imp-chosen:hover {
+	background-color: #63d463;
+}
+
+.imp-option-row {
+	display: table-row;
+}
+
+.imp-option-num {
+	display: table-cell;
+	width: 20px;
+	vertical-align: middle;
+	padding: 6px;
+	font-size: 20px;
+}
+
+.imp-option-text {
+	display: table-cell;
+	vertical-align: middle;
+	padding: 6px;
+}
+
+.imp-accept {
+	margin: 10px 0;
+	text-align: right;
+}
+
+@media only screen and (max-width:680px) {
+	.imp-list, .imp-chooser {
+		display: block;
+		border: none;
+	}
+}

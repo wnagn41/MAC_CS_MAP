@@ -1,0 +1,1659 @@
+"use strict";
+
+/*
+This code is the exclusive property of
+Visual Schedule Builder Inc.
+www.vsbuilder.com
+Copyright 2002-2020.
+*/
+
+// dDivide - dateCode where the schedule will end if it's the first half or begin if it's
+// not the first half (i.e. second half) for Fall/Summer situation or similar.
+function Schedule(scheduleDest,isDateGrid,isPersonal,isDragging,isFirstHalf,isPinning) {
+	
+	var self=this;
+	var $divSchedule = $(scheduleDest);
+	if ($divSchedule.length<1) {
+		console.log("Error: scheduleDest not found");
+	}
+	var redrawTimetable=true;
+	
+	var drawnV1=null;
+	var drawnV2=null;
+	
+	var nbCourses=0;
+	var dateGridStart = null;
+	var dateGridEnd = null;
+	var dateGridMonthWidth = 10;
+	
+	var lastResult = null;
+	var lastGState = null;
+	var schedulePos = null;
+	var onePxInPerc=0.4;
+	
+	// Drag/Touch items:
+	var dragDayHourStart = null;
+	var dragDayHourUnderMouse = null;
+	var refreshes = 0;
+	var touchTime=null;
+	var holdTimeout=null;
+	var tap=false;
+	var startCoords=null;
+	var coords=null;
+	var preventEmulateTimeout=null;
+	var timeToHold=700;
+	
+	// Size
+	this.firstDay=2; // Monday
+	this.lastDay=6; // Friday
+	this.firstHour=11;
+	this.lastHour=13;
+	this.d1=null;
+	this.d2=null;
+	this.v1=null;
+	this.v2=null;
+	this.largeDateGrid2=largeDateGrid;
+	
+	this.campusChangeWarning=false;
+	
+	function clearChildren(el) {
+		while (el.childNodes.length >= 1) {
+			el.removeChild(el.lastChild);
+		}
+	}
+	if (isDragging) {
+		$divSchedule.on("touchstart", touchStart);
+		$divSchedule.on("touchmove ", touchMove);
+		$divSchedule.on("touchend", touchEnd);
+		$divSchedule.on("mousedown", mouseDown);
+		$divSchedule.on("mousemove", mouseMove);
+		$divSchedule.on("mouseup", mouseUp);
+		
+		$(window).scroll(function(){
+			//consolelog("scroll");
+			dragDayHourStart=null;
+			touchTime=null;
+			if (holdTimeout!=null) {
+				clearTimeout(holdTimeout);
+				holdTimeout=null;
+			}
+		});
+	}
+	
+	this.setSize = function(cnfs,dDivide) {
+		redrawTimetable = true;
+		var day1=2; // Monday
+		var day2=6; // Friday
+		var t1=60*calendarStart;
+		var t2=60*calendarEnd;
+		var d1=Number.MAX_VALUE;
+		var d1b=Number.MAX_VALUE;
+		var d2=0;
+		nbCourses=cnfs.length;
+		var unsched=true;
+
+		for (var c=0;c<cnfs.length;c++) {
+			var cnf=cnfs[c];
+			if (!cnf.cnPro.filterPass) continue;
+			for (var u=0;u<cnf.cnPro.uselPros.length;u++) {
+				var uselPro=cnf.cnPro.uselPros[u];
+				var usel=uselPro.usel;
+				if (!uselPro.filterPass) continue;
+				var sel=uselPro.selPros[0].sel;
+				for (var i=0;i<sel.classes.length;i++) {
+					var cls=sel.classes[i];
+					for (var j=0;j<cls.timeblocks.length;j++) {
+						unsched=false;
+						var tb=cls.timeblocks[j];
+						if (tb.day < day1) {
+							day1 = tb.day;
+						}
+						if (tb.day > day2) {
+							day2 = tb.day;
+						}
+						if (tb.t1 < t1) {
+							t1 = tb.t1;
+						}
+						if (tb.t2 > t2) {
+							t2 = tb.t2;
+						}
+					}
+				}
+				if (usel.d1 < d1) {
+					d1 = usel.d1;
+				}
+				if (dDivide) {
+					if (usel.d1 >= dDivide && usel.d1 < d1b) {
+						d1b = usel.d1;
+					}
+				}
+				if (usel.d2 > d2) {
+					d2 = usel.d2;
+				}
+			}
+		}
+		
+		self.largeDateGrid2=unsched||hideTimetable;
+		
+		// If the range is less than 6 hours, bump it up to 6 hours.
+		if (t2-t1<360) {
+			var add=(t2-t1)/120;
+			add=Math.ceil(add);
+			t1-=add*60;
+			t2+=add*60;
+		}
+		
+		// If no courses, put a simple date/hour range
+		if (cnfs.length==0) {
+			day1=2;
+			day2=6;
+			t1=9*60;
+			t2=18*60;
+		}
+		
+		this.firstDay=day1;
+		this.lastDay=day2;
+		this.firstHour=Math.floor(t1/60);
+		this.lastHour=Math.ceil(t2/60);
+		
+		var ymd_test1=new YearMonthDay(d1);
+		var ymd_test2=new YearMonthDay(d2);
+		
+		if (dDivide) {
+			// This schedule is one of two parts divided
+			if (isFirstHalf) {
+				this.d1=d1;
+				this.d2=dDivide;
+			} else {
+				this.d1=dDivide;
+				this.d2=d2;
+			}
+		} else {
+			this.d1=d1;
+			this.d2=d2;
+		}
+		
+		var stuffToShow=true;
+		if (isFirstHalf && this.d1>this.d2) {
+			stuffToShow=false;
+			this.d1=this.d2-60;
+		}
+		if (!isFirstHalf && this.d2<this.d1) {
+			stuffToShow=false;
+			this.d2=this.d1+60;
+		}
+
+		// About year 2208 (hey kids)
+		if (this.d1>73200) {
+			this.d1=0;
+		}
+    	// Prevent more than 2 years (something wrong)
+    	if (this.d2-this.d1>731) this.d2=this.d1+731;
+    	
+		var resetV1V2=(this.v1==null || this.v2<this.d1 || this.v1>this.d2 || d1b!=this.d1b);
+		this.d1b=d1b;
+
+		if(weekSliderDisplay && isDateGrid) {
+			// Get day of week of d1 (0=Sunday, 1=Monday)
+			var day=(this.d1+1)%7;
+			this.firstSunday=this.d1-day;
+			var totalWeeks=Math.ceil((this.d2-this.firstSunday)/7);
+			this.totalWeeks=totalWeeks;
+			if (resetV1V2) {
+				var firstDay=(!isFirstHalf&&d1b<this.d2)?d1b:this.d1;
+				var weekIndex=Math.ceil((firstDay-this.firstSunday)/7); // Show a later week by default if the term starts part way through the week
+				if (weekIndex>=totalWeeks) weekIndex=totalWeeks-1;
+				this.gotoWeek(weekIndex);
+			}
+		} else {
+			if (this.$divSchedule!=null) {
+				this.$divSchedule.find(".sliderdiv").hide();	
+			}
+			if (resetV1V2) {
+				this.v1=this.d1;
+				this.v2=this.d2;				
+			}
+		}
+		
+		return stuffToShow; // false if no classes in this schedule's date range
+	}
+	
+	this.dayWidth=61; // set elsewhere
+	this.hourHeight=timesheetHourHeight>0?+timesheetHourHeight:32;
+	
+	this.hourHeightCalc=this.hourHeight;
+	this.headerHeightCalc=17;
+	setInterval(function() {
+		// Keep hourHeightCalc updated based on browser zoom level
+		var h=$divSchedule.find(".weekArea").first().height();
+		if (h==null || h==0) return;
+		var h2=$divSchedule.find(".header").height();
+		h-=h2;
+		h=h/(self.lastHour-self.firstHour);
+		if (self.hourHeightCalc!=h || self.headerHeightCalc!=h2) {
+			// Zoom level changed! Redraw.
+			self.hourHeightCalc=h;
+			self.headerHeightCalc=h2;
+			lastGState.bbsOutdated=true;
+			self.draw(lastResult,lastGState);
+		}
+	},222);
+
+	this.isPrevWeek = function() {
+		return (this.v1>this.d1);
+	}
+
+	this.isNextWeek = function() {
+		return (this.v2<this.d2);
+	}
+
+	this.gotoWeek = function(weekIndex) {
+		this.currWeekIndex=weekIndex;
+		this.v1=this.firstSunday+(7*weekIndex);
+		this.v2=this.v1+6;
+	}
+	
+	function drawTimetable() {
+		if (self.d1==null) {
+			console.log("setSize not called");
+		}
+		var h="";
+		h += "<h3 class=\"visuallyhidden\" style=\"padding-left: 62px\">"+i8n.schedule+"</h3>";
+		h += "<div class=\"visuallyhidden\">If you are";
+		h += "	using a screen reader, the contents of this heading will not be useful. ";
+		if (scheduleDest.indexOf("preview")>=0) {
+			h += "To read this favorite you must load it, then read the details under the legend heading found on the schedule result region.";
+		} else {
+			h += "Visual content represented here on the timetable is repeated verbally under the Legend heading.";
+		}
+		h += "</div>";
+		h += "<div style=\"position: relative;\" class=\"timetable_part\" aria-hidden=\"true\">";
+		h += "	<div class=\"weekName\">";
+		h += "		&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span";
+		h += "			class=\"timetable_title\">&nbsp;</span>";
+		h += "	</div>";
+		h += "";
+		h += "	<div class=\"timezoneAbbr\">"+((BB.tz)?BB.tz.abbr:"&nbsp;")+"</div>";
+		h += "";
+		h += "	<div class=\"timetable table_container\">";
+		h += "		<div style=\"position: relative\">";
+		h += "			<div class=\"weekArea\"></div>";
+		h += "			<div class=\"currentBusyBlocks\"";
+		h += "				style=\"position: absolute; display: block; top: 0px; left: 0px; width: 100%; height: 100%\">";
+		h += "				&nbsp;</div>";
+		h += "			<div class=\"weekTimes\"";
+		h += "				style=\"position: absolute; display: block; top: 0px; left: 0px; width: 100%; height: 100%\"";
+		h += "				class=\"cal_view\"";
+		h += "				title=\""+(isDragging?i8n.dontWant:"")+"\">";
+		h += "			</div>";
+		h += "		</div>";
+		h += "	</div>";
+		h += "</div>";
+		h += "";
+		h += "<div class=\"timetableMsg\"></div>";
+		h += "<div class=\"monthscalc\" aria-hidden=\"true\">";
+		
+		if (weekSliderDisplay) {
+			h += "	<div class=\"sliderdiv timetable_part\" aria-hidden=\"true\" style=\"position: relative;\">";
+			h += "		<div style=\"text-align:center;padding:4px 0 12px 0;\">";
+			h += "			<label>";//+i8n.weeksliderlabel;
+			h += "				<span class=\"disp_days\">---</span></label>";
+			h += "		</div>";
+			h += "		<div class=\"slider\" data-begin=\"1\" data-end=\"20\"></div>";
+			h += "		<button class=\"sliderleft disable-no-results\" title=\"Previous Week\">";
+			h += "			<i class=\"nav-prev results-week-nav\" aria-hidden=\"true\"></i>";
+			h += "		</button>";
+			h += "		<button class=\"sliderright disable-no-results\" title=\"Next Week\">";
+			h += "			<i class=\"nav-next results-week-nav\" aria-hidden=\"true\"></i>";
+			h += "		</button>";
+			h += "	</div>";
+		}
+		
+		h += "";
+		h += "	<div class=\"dateGridHolder\" style=\"position: relative;\">";
+		h += "		<div class=\"dateGridTable\"></div>";
+		h += "		<div class=\"dateGridBlocks\"></div>";
+		h += "		<div class=\"scheduleWarning\"></div>";
+		h += "	</div>";
+		h += "</div>";
+		h += "";
+		
+		if(BB.tz && BB.tz.dstWarning){
+			h+= "<div class='scheduleWarning'>"+i8n.daylightSavingTimeMessage+"</div>";
+		}
+		
+		if(i8n.scheduleWarning.length>0) {
+			h+= "<div class='scheduleWarning'>"+i8n.scheduleWarning+"</div>";
+		}
+		
+		if (isPersonal && !hideManualPersonalTimes) {
+			h += "<h3 class=\"bubbletitle visuallyhidden timetable_part\">"+i8n.addTimeToAvoid+"</h3>";
+			h += "<div class=\"timesToAvoid noprint timetable_part\">";
+			
+			h += "<div style='display: flex; justify-content: flex-start; align-items: center;'>";
+			h += '		<button class="mdl-button mdl-js-button manual-time-expand expand-button" aria-label="expand manual time input">';
+			h += '			'+i8n.addTimeToAvoid+'<i class="far fa-angle-down"></i>';
+			h += '		</button>';
+			h += '</div>';
+
+			h += "	<div class='timesToAvoidContent' style='text-align:left; display:none'>";
+			h += " <div class='bubble' style='width:auto'>"+i8n.clearTimesToAviodText+"</div>";
+			h += "	<div style=\"margin:0 -5px;display:flex;justify-content:flex-start;flex-wrap:wrap;\">";
+			h += "	  <div style='margin:5px'>";			
+			h += "		<input type=\"text\" aria-label='Personal Time Entry. For example, enter Friday 5 dash 7 PM and press enter.' class=\"add_avoid_time\""; // TODO
+			h += "			style=\"width:300px; font-size: 120%;\"/>";
+			h += "	    <br/>"+i8n.examples;
+			h += "	  </div>";
+			h += "	  <input style='margin:5px' type=\"button\" class=\"add_avoid_time_button big_button\" value=\""+i8n.addTime+"\"/>";
+			h += "	  <input style='margin:5px' type=\"button\" class=\"big_button clearAvoidTimesButton\"	value=\""+i8n.clearTimesToAviod+"\"/>";
+			h += "	</div>";
+			h += "	<div class=\"avoidNotice\" role=\"alert\"></div>";
+			h += "	</div>";
+			h += "</div>";
+		}
+		h += "";
+		
+		$divSchedule.html(h);
+		
+		$divSchedule.find(".manual-time-expand").click(function() {
+			$(this).parents(".timesToAvoid").find('.timesToAvoidContent').slideToggle()
+			$(this).toggleClass("expanded");
+			if ($(this).hasClass("expanded")) {
+				$(".manual-time-expand").attr("aria-label", "collapse manual time input");
+			} else {
+				$(".manual-time-expand").attr("aria-label", "expand manual time input");
+			}
+		});
+
+		$divSchedule.find(".mdl-switch-nvda-fix").keydown(function(key) {
+    		if (key.keyCode !== 32 && key.keyCode !== 13) {
+    			return;
+    		}
+
+			key.stopPropagation();
+			$divSchedule.find("#timesToAvoid-switch").click();
+		});
+		
+		
+		new Timetable($divSchedule.find(".weekArea"),self.firstDay,self.lastDay,self.firstHour,self.lastHour);
+		
+	    
+	    if (isDateGrid) {
+	    	
+	    	if (nbCourses<=0) {
+	    		$divSchedule.find(".monthscalc").hide();
+	    	} else {
+	    		$divSchedule.find(".monthscalc").show();
+	    	}
+	    	
+			var $s=$divSchedule.find(".slider");
+		    $s.slider({
+		        range: "min",
+		        value: self.currWeekIndex,
+		        min: 0,
+		        max: self.totalWeeks-1,
+		        slide: function (event, ui) {
+		        	self.gotoWeek(ui.value);
+		        	self.draw(lastResult,lastGState);
+		        	if (event.which==37 || event.which==39) {
+		        		// If left or right keys, prevent the schedule from changing.
+		        		event.stopPropagation();
+		        	}
+		        }
+		    });
+
+	    	var borderDays=weekSliderDisplay?20:0;
+	    	var ymd1 = new YearMonthDay(self.d1-borderDays);
+	    	var ymd2 = new YearMonthDay(self.d2+borderDays);
+	    	
+	    	dateGridStart = ymd1;
+	    	dateGridEnd = ymd2;
+	    		
+	    	var m1 = ymd1.m;
+	    	var m2 = ((ymd2.y-ymd1.y)*12)+ymd2.m;
+	    	
+	    	dateGridMonthWidth = 100/(m2-m1+1);
+
+	    	var th="<table class='dateGrid "+(self.largeDateGrid2?"larger":"")+"' style=\"border-spacing:0px; padding: 0px;\">";
+	    	for (var i=0; i<=nbCourses; i++) {
+	    		th+="<tr>";
+	    		// First row is the header
+	    		if(i == 0) {
+	    			for (var m=m1; m<=m2; m++) {
+		    			th+="<td style='width:" + dateGridMonthWidth + "%;' class='mo'>";
+	    				th+=getMonth(m%12);
+	    				if (m%12==0) {
+	    					th+=(" "+(ymd1.y+Math.floor(m/12))).replace(" 20"," '");
+	    				}
+	    				th+="</td>";
+		    		}
+	    		} 
+	    		// Other rows represent the courses
+	    		else {
+	    			for (var m=m1; m<=m2; m++) {
+		    			th+="<td";
+		    			if (m==m1) th+=" class='sp-listing-"+i+"'";
+		    			th+=">";
+	    				th+="</td>";
+		    		}
+	    			//th+="<td colspan=" + (m2-m1+1) + " class='sp-listing-"+i+"'>";
+    				//th+="</td>";
+	    		}
+	    		th+="</tr>";
+	    	}
+	    	th+="</table>";
+
+	    	var $dateGridTable = $divSchedule.find(".dateGridTable");
+	    	$dateGridTable.html(th);
+	    	
+	    	if (weekSliderDisplay) {
+		    	var sliderX1=dateToPixelPos(new YearMonthDay(self.firstSunday),dateGridMonthWidth);
+		    	var sliderX2=dateToPixelPos(new YearMonthDay(self.firstSunday+7*self.totalWeeks),dateGridMonthWidth);
+		    	var ww=(dateGridMonthWidth/31*7);
+	
+		    	var $slider = $divSchedule.find(".slider");
+		    	
+		    	$slider.css("left",(sliderX1+(ww/2))+"%");
+		    	$slider.css("width",((sliderX2-sliderX1)-ww)+"%");
+		    	
+		    	$divSchedule.find(".sliderleft").css("right",((100-sliderX1)+"%"));
+		    	$divSchedule.find(".sliderright").css("left",(sliderX2+"%"));
+		    	
+		    	$divSchedule.find(".ui-slider-handle").css("width",ww+"%");
+		    	var sHeight=nbCourses*(self.largeDateGrid2?38:16)+40;
+		    	if (self.largeDateGrid2) sHeight=nbCourses*38+50;
+		    	$divSchedule.find(".ui-slider-handle").html("<span style='height:"+sHeight+"px'></span>");
+		    	
+		    	$divSchedule.find('.sliderright').click(function () {
+		    		if ($(this).find(".results-nav-disabled").length>0) {
+		    			return;
+		    		}
+		    		var value = $slider.slider("value");
+		    		value++;
+		    		$slider.slider("value", value);
+		    		self.gotoWeek(value);
+		    		self.draw(lastResult,lastGState);
+		        });
+		    	
+		    	$divSchedule.find('.sliderleft').click(function () {
+		    		if ($(this).find(".results-nav-disabled").length>0) {
+		    			return;
+		    		}
+		    		var value = $slider.slider("value");
+		    		value--;
+		    		$slider.slider("value", value);
+		    		self.gotoWeek(value);
+		    		self.draw(lastResult,lastGState);
+		        });
+	    	}
+	    	
+	    }
+	    
+	    if (isPersonal) {
+	    	
+	    	$divSchedule.find(".add_avoid_time").keyup(function (e) {
+	    	    if (e.keyCode == 13) {
+	    	        addAvoidTime($(this).val());
+	    	    }
+	    	});
+	    	
+	    	$divSchedule.find(".add_avoid_time_button").click(function() {
+	    		var string=$divSchedule.find(".add_avoid_time").val();
+	    		addAvoidTime(string);
+	    	});
+	    	
+	    	$divSchedule.find(".clearAvoidTimesButton").click(function() {
+	    		clearAvoidTimes();
+	    	});
+	    }
+	    
+	    $(".slider > a").attr('tabindex', '-1');
+	    
+	}
+	
+	this.drawTimeHighlight = function(sel) {
+		for (var j=0; j<sel.classes.length; j++) {
+			var cls=sel.classes[j];
+			for (var k=0; k<cls.timeblocks.length; k++) {
+				var timeblock = cls.timeblocks[k];
+				if (timeblock.d2<self.d1 || timeblock.d1>self.d2) {
+					continue;
+				}
+				addImage(timeblock,"timeHigh");
+			}
+		}
+	}
+	
+	this.removeTimeHighlights = function() {
+		$divSchedule.find(".timeHigh").remove();
+	}
+	
+	function isHoliday(hs,d) {
+		var sched=MM.termBundle[BB.activeState.term].holidayschedules[hs];
+		if (sched) {
+			var hol=sched.holidays[d];
+			if (hol) {
+				// Falls on holiday
+				return hol;
+			}
+		}
+		return false;
+	}
+	
+	function addInfoEntry(txt) {
+		var $m=$divSchedule.find(".timetableMsg");
+		if (!txt) {
+			$m.empty();
+			//$m.hide();
+		} else {
+			var h="<div>";
+			h+="<i class='fa fa-info-circle'></i> ";
+			h+=txt+"</div>"
+			$m.append(h);
+			$m.show();
+		}
+	}
+	
+	this.draw = function(result,gState) {
+		lastResult = result;
+		lastGState = gState;
+		
+		if (redrawTimetable) {
+			drawTimetable();
+		}
+		
+		var scheduleWidthPx=$divSchedule.find("table").width();
+		if (scheduleWidthPx<200) scheduleWidthPx=400;
+		onePxInPerc=100/scheduleWidthPx;
+		
+		if (gState!=null && (redrawTimetable || gState.bbsOutdated)) {
+			refreshBusyBlocks(gState);
+		}
+
+		// Remove current blocks 
+		$divSchedule.find(".time_block").remove();
+		$divSchedule.find(".dateBlock").remove();
+		$divSchedule.find(".exclBlock").remove();
+		addInfoEntry(null);
+		
+		if (gState==null) return;
+
+		// Draw the blocks on the schedule
+		if (gState==BB.activeState) {
+			
+			var noResults=gState.sortedFilteredResults.length<1;
+			$("body").toggleClass("noResults",noResults&&gState.getVisibleCnfs().length>0);
+			$("body").toggleClass("noCnfs",gState.cnfs.length<=0);
+			$(".eeLoadingAnimation").hide();			
+			$('.disable-no-crf').attr('disabled', gState.cnfs.length<=0);
+			$('.disable-no-results').attr('disabled', noResults&&gState.getVisibleCnfs().length>0);
+			
+			if (noResults&&gState.getVisibleCnfs().length>0) {
+				$('.disable-no-results[tabindex]').each(function() {
+					var element = $(this);
+					var tabindex = element.attr('tabindex');
+					element.attr('tabindex', -1);
+					element.attr('xtabindex', tabindex);
+				});
+			} else {
+				$('.disable-no-results[xtabindex]').each(function() {
+					var element = $(this);
+					var tabindex = element.attr('xtabindex');
+					element.attr('tabindex', tabindex);
+				});
+			}
+			
+			if (noResults) {
+				var idea = getNoResultsIdea(gState);
+				$(".noResultsIdea").toggle(idea.length>0);
+				$(".noResultsIdeaText").html(idea);
+				$("#no_results_message_div").attr("role","alert");
+			}
+			
+		}
+		
+		// Take the radio-selected ones
+		var mySelPros=[];
+		var lastCnfid = null;
+		for (var i=0; i<result.selPros.length; i++) {
+			var selPro = result.selPros[i];
+			if (lastCnfid!=null && lastCnfid==selPro.cnf.cnfid) {
+				continue;
+			}
+			// Find best sel in usel
+			var best=i;
+			for (var j=i+1;j<result.selPros.length;j++) {
+				var selPro2 = result.selPros[j];
+				if (selPro2.cnf!=selPro.cnf) break;
+				if (selPro2.isChosen()) {
+					// Found a better one - the selected one
+					i=j;
+					selPro=selPro2;
+					break;
+				}
+			}
+			mySelPros.push(selPro);
+			lastCnfid = selPro.cnf.cnfid;
+		}		
+		
+		this.campusChangeWarning=false;
+		var lastCnfid = null;
+		var courseNb = 0;
+		var hss={}; // holiday schedule(s) used
+		var weeksUntil=999;
+		var nodisp=true; // nothing to show this week
+		var nosched=true; // no timeblocks in schedule
+		var nbUnSched=0; // courses with no timeblocks
+		var online=false; // any online courses
+		var csSumms=[];
+		for (var i=0; i<mySelPros.length; i++) {
+			var selPro = mySelPros[i];
+			var sel = selPro.sel;
+			courseNb++;
+			
+			if (!sel.onCampus) {
+				online=true;
+			}
+			
+			// Date Grid stuff
+			var ymd1=new YearMonthDay(sel.usel.d1);
+			var ymd2=new YearMonthDay(sel.usel.d2);
+			var edd=drawDateRow(courseNb,sel.cn.code+" "+sel.cn.number,selPro.cnf.color,selPro.cn.title,sel.classes,ymd1,ymd2,selPro.cnf.cnfid,sel.usel.key,selPro.cnf.isPinned(),!sel.onCampus,selPro.cnf.hide);
+			var away=Math.floor((edd.c-this.v1)/7);
+			if (away<weeksUntil) {
+				weeksUntil=away;
+			}
+			
+			var unSched=true;
+			for (var j=0; j<sel.classes.length; j++) {
+				var cls=sel.classes[j];
+				var fState=cls.getFullState();
+				if (cls.hs) {
+					hss[cls.hs]=true;
+				}
+				var text="<span class='mobile_nb'>"+courseNb+"</span><span class='nonmobile'>";
+				if (template=="york") {
+					var code=sel.cn.code;
+					var nb=3;
+					for (var ci=0;ci<code.length;ci++) {
+						if (code.charAt(ci)=='-') nb--;
+						if (nb==0) {
+							code=code.substr(0,ci);
+							break;
+						}
+					}
+					code=code.replace(/-/g,"-<wbr/>"); // Fix firefox no-break-on-hyphen
+					var meet="";//cls.secNo;
+					text+=code+"<br/>"+cls.type+" "+meet+" Sec."+cls.usn;
+					// TODO: Use cnf.cs
+					//text+=" Period "+cls.pn+" Section "+cls.usn+"<br/>"+cls.location;
+				} else if (template=="cap") {
+					text+=sel.cn.code + " " + sel.cn.number +" " + cls.secNo;
+				}  else if (template=="4cd") {
+					text+=sel.cn.code + " " + sel.cn.number +"<br/>" + cls.secNo;
+				} else {
+					text+=sel.cn.code + " " + sel.cn.number +"<br/>" + (hideDisplayStringClassType?"":"(T#PE)");
+				}
+				if (secNoOnTimetable) {
+					text+=" "+cls.secNo;
+				}
+				if (locationOnTimetable) {
+					text+="<br/>(L#C)";
+				}
+				if (datesOnTimetable) {
+					text+="<br/><span class='tt_dates'>(D#D)</span>";
+				}
+				// Note: See "need to redraw" in legend.js if text changes on sel change instead of usel.
+				text+="</span>";// + " " + cls.secNo;
+				if (switchNameAndCode) text=sel.cn.title;
+				for (var k=0; k<cls.timeblocks.length; k++) {
+					var timeblock = cls.timeblocks[k];
+					nosched=false;
+					unSched=false;
+					
+					// See if we really should show it for this schedule's date range
+					if (timeblock.d2<self.d1 || timeblock.d1>self.d2) {
+						continue;
+					}
+
+					var lowerDates=0;
+					var higherDates=0;
+
+					// Check for campus proximity and visual overlap:
+					var lastCnfid2 = null;
+					for ( var i2 = 0; i2 < mySelPros.length; i2++) {
+						var selPro2 = mySelPros[i2];
+						var sel2 = selPro2.sel;
+						if (sel2.usel==sel.usel) continue;
+						if (lastCnfid2!=null && lastCnfid2==selPro2.cnf.cnfid) {
+							// No need to check this selection, we already checked its timeblocks
+							continue;
+						}
+						
+						for ( var j2 = 0; j2 < sel2.classes.length; j2++) {
+							var cls2 = sel2.classes[j2];
+							for ( var k2 = 0; k2 < cls2.timeblocks.length; k2++) {
+								if (i == i2 && j == j2 && k == k2) continue;
+								var timeblock2 = cls2.timeblocks[k2];
+								if (timeblock.day != timeblock2.day) continue;
+								
+								// Skip it if it's out of date range
+								if (timeblock2.d2<self.d1 || timeblock2.d1>self.d2) {
+									continue;
+								}
+
+								// No date overlap. But may be visual overlap
+								if (timeblock2.t1 < timeblock.t2 && timeblock2.t2 > timeblock.t1) {
+									
+									if (timeblock2.d2 - timeblock2.d1 >= minDuration) {
+										// Overlap!
+										if (timeblock.d1 > timeblock2.d1) {
+											lowerDates++;
+										} else if (timeblock.d1==timeblock2.d1) {
+											if (i>i2) {
+												lowerDates++;
+											} else {
+												higherDates++;
+											}
+										} else {
+											higherDates++;
+										}
+									}
+									
+								}
+
+								// Only do campus check once
+								if (i2 < i) continue;
+
+								if (!(minCampusSwitchTime>0)) continue;
+								
+								var cam1=cls.campus;
+								var cam2=cls2.campus;
+								var im1=cls.im;
+								var im2=cls2.im;
+								var loc1=warnPsLocationSwitchInstead?cls.psl:cls.location.split(" - ")[0];
+								var loc2=warnPsLocationSwitchInstead?cls.psl:cls2.location.split(" - ")[0];
+								
+								if (warnPsLocationSwitchInstead||warnLocationSwitchInstead) {
+									if (loc1==loc2) continue;
+								} else {
+									if (cam1==cam2) continue;
+								}
+								
+								if (!onlineClassCampusChangeWarning) {
+									if (cls.ot!="c"||cls2.ot!="c") continue; // Only warn regarding "on-campus" classes.
+								}
+
+								var minTime = minCampusSwitchTime;
+								// Check for overrides
+								for (var si=0;si<switchTimeOverrides.length;si++) {
+									var sto=switchTimeOverrides[si];
+									if (((!sto.cam1||sto.cam1==cam1) && (!sto.im1||sto.im1==im1) && (!sto.loc1||sto.loc1==loc1) && (!sto.cam2||sto.cam2==cam2) && (!sto.im2||sto.im2==im2) && (!sto.loc2||sto.loc2==loc2)) ||
+									    ((!sto.cam1||sto.cam1==cam2) && (!sto.im1||sto.im1==im2) && (!sto.loc1||sto.loc1==loc2) && (!sto.cam2||sto.cam2==cam1) && (!sto.im2||sto.im2==im1) && (!sto.loc2||sto.loc2==loc1)) ) {
+										minTime=sto.time;
+									}
+								}
+								
+								if (!(minTime>0)) continue;
+
+								// May be campus proximity issue
+
+								if ((Math.abs(timeblock.t2 - timeblock2.t1) > minTime)
+										&& (Math.abs(timeblock.t1 - timeblock2.t2) > minTime)) {
+									// Times are not close enough
+									continue;
+								}
+
+								var t1 = timeblock.t2;
+								var t2 = timeblock2.t1;
+								if (t2 < t1) {
+									t1 = timeblock2.t2;
+									t2 = timeblock.t1;
+								}
+								var tb = new TimeBlock(0, timeblock.day, t1, t2, timeblock.d1, timeblock.d2, i8n.s("campusChange",minCampusSwitchTime),false);
+								addImage(tb);
+								this.campusChangeWarning=true;
+							}
+						}
+						lastCnfid2 = selPro2.cnf.cnfid;
+					}
+					
+					var text2=text;
+					if (locationOnTimetable) {
+						var loc=cls.getLocForTimeBlock(timeblock.id);
+						text2=text2.replace("(L#C)",loc);
+					}
+					text2=text2.replace("(T#PE)",timeblock.xm?"EXAM":(timeblock.type&&timeblock.type!=''?timeblock.type:cls.type));
+					if (datesOnTimetable) {
+						var ymd1=new YearMonthDay(timeblock.d1);
+						var ymd2=new YearMonthDay(timeblock.d2);
+						var dstr=getMonth(ymd1.m%12)+" "+ymd1.d+" - "+getMonth(ymd2.m%12)+" "+ymd2.d;
+						text2=text2.replace("(D#D)",dstr)
+					}
+					var ot=cls.ot;
+					if (timeblock.ot.length>0) ot=timeblock.ot;
+					var otOnline=ot.indexOf("o")>=0||ot.indexOf("l")>=0;
+					var displayed=addTimeBlock(selPro.cnf.isPinned(),selPro.cnf.lockdrop,selPro.cnf.color,timeblock,text2,selPro.cnf.cnfid,sel.usel.key,lowerDates,higherDates,cls.hs,fState,selPro.cnf.hide,otOnline);
+					if (displayed) {
+						nodisp=false;
+					}
+				}
+			}
+			lastCnfid = selPro.cnf.cnfid;
+			if (unSched) nbUnSched++;
+			
+			// If a selection has both online and on-campus classes, it will be considered on-campus. 
+			csSumms.push({"color":selPro.cnf.color,"name":sel.cn.code+" "+sel.cn.number,"online":!sel.onCampus,"unsched":unSched});
+		}
+		
+		
+		// Update the Week Slider display and holidays
+		if (weekSliderDisplay && (redrawTimetable || drawnV1==null || drawnV2==null || drawnV1!=self.v1 || drawnV2!=self.v2)) {
+			$divSchedule.find(".sliderleft").toggleClass("no-hover",!this.isPrevWeek());
+			$divSchedule.find(".sliderright").toggleClass("no-hover",!this.isNextWeek());
+			$divSchedule.find(".sliderleft .results-week-nav").toggleClass("results-nav-disabled",!this.isPrevWeek());
+			$divSchedule.find(".sliderright .results-week-nav").toggleClass("results-nav-disabled",!this.isNextWeek());
+
+			$divSchedule.find(".disp_days").html(sugString(self.v1, self.v2));
+			$divSchedule.find(".sliderleft").attr("aria-label", "go to week " + sugString(self.v1 - 7, self.v2 - 7));
+			$divSchedule.find(".sliderright").attr("aria-label", "go to week " + sugString(self.v1 + 7, self.v2 + 7));
+
+			$divSchedule.find(".timetable tr.header").addClass("tall");
+			for (var d=1;d<=7;d++) {
+				var dcode=self.v1+d-1;
+				var ymd = new YearMonthDay(dcode);
+				// Indicate if holiday
+				var hols="";
+				for (var hs in hss) {
+					var name=isHoliday(hs,dcode);
+					if (name) {
+						hols+=name;
+					}
+				}
+				$divSchedule.find(".holl_"+d).text(hols).toggle(hols.length>0);
+				$divSchedule.find(".day_"+d+"_date").html((hols.length>0?"  ":"<br/>")+getMonth(ymd.m)+" "+ymd.d);
+			}
+			drawnV1=self.v1;
+			drawnV2=self.v2;
+			
+		}
+		
+		if (!hideTimetable && weekSliderDisplay && weeksUntil>0 && weeksUntil<999) {
+			if (nosched) {
+				addInfoEntry("The first class starts "+weeksUntil+" week"+(weeksUntil>1?"s":"")+" later.");
+			} else {
+				addInfoEntry("The first scheduled event starts "+weeksUntil+" week"+(weeksUntil>1?"s":"")+" later. Use the slider to view other weeks.");
+			}
+		}
+		
+		var tellUser=[];
+		tellUser.push({"type":"xAsychronousOnline","cs":csSumms.filter(c=>c.online&&c.unsched)});
+		tellUser.push({"type":"xOnline","cs":csSumms.filter(c=>c.online&&!c.unsched)});
+		tellUser.push({"type":"xUnscheduled","cs":csSumms.filter(c=>!c.online&&c.unsched)});
+		
+		for (var tu of tellUser) {
+			if (tu.cs.length<=0) continue;
+			var h="";
+			var ct=0;
+			for (var c of tu.cs) {
+				h+="<div class='minilabel bc"+c.color+"'>"+c.name+"</div> ";
+				ct++;
+			}
+			h+=i8n.s(tu.type+(ct>1?"2":""))+(BB.legend?"":". <a onclick='RR.toggleLegend();' style='cursor:pointer;'>Show Details</a>");
+			addInfoEntry(h)
+		}
+		
+		if (nodisp) {
+			if (!nosched && (weeksUntil<=0 || weeksUntil>=999)) {
+				if (weekSliderDisplay) addInfoEntry("There are scheduled times on other weeks");
+			}
+		}
+		
+		redrawTimetable=false;
+
+	}
+
+	function sugString(v1, v2){
+		var ymdw1 = new YearMonthDay(v1);
+		var ymdw2 = new YearMonthDay(v2);
+		var sugString=getMonth2(ymdw1.m%12)+" "+ymdw1.d;
+		if (ymdw1.y!=ymdw2.y) {
+			sugString+=", "+ymdw1.y;
+		}
+		sugString+=" - ";
+		if (ymdw1.m!=ymdw2.m) {
+			sugString+=getMonth2(ymdw2.m%12)+" ";
+		}
+		sugString+=ymdw2.d+", "+ymdw2.y;
+		return sugString;
+	}
+	
+	function addTimeBlock(isPinned,lockdrop,color,timeBlock,text,cnfid,selkey,lowerDates,higherDates,hs,fState,hide,isOnline) {
+
+		if (timeBlock.d2 - timeBlock.d1 < minDuration) {
+			return false;
+		}
+
+		if (weekSliderDisplay && !timeBlock.doesOccurBetween(self.v1,self.v2)) {
+			return false;
+		}
+		
+		// 3. Ensure not a holiday
+		if (hs && isHoliday(hs,self.v1+timeBlock.day-1)) {
+			return false;
+		}
+		
+		var pos = getBlockPosition(timeBlock);
+
+		var newW = pos.widthp;
+		var newLeft = pos.leftp;
+
+		if ((lowerDates>0 || higherDates>0)&& !weekSliderDisplay) {
+			newW = newW/(lowerDates+higherDates+1);
+			newLeft += newW*lowerDates;
+		}
+
+		var pinned=false;
+		var extraClass="";
+		var message="";
+		if (isPinning) {
+			if (isPinned) {
+				pinned=true;
+				if (lockdrop) {
+					extraClass=" bclock";
+					message+=i8n.isClassRequirement;
+				} else {
+					extraClass=" bcpin";
+					message+=i8n.clickToUnpin;
+				}
+			} else {
+				message+=i8n.clickToPin;
+			}
+		}
+		extraClass+=" tb_fstate_"+fState;
+
+		// Create new element
+		var el = document.createElement('div');
+		var clsName = "time_block bc"+color+" bd"+color+" bh"+color+extraClass;
+		
+		if (hide) {
+			clsName += " hide-course";
+		}
+		
+		el.setAttribute("class",clsName);
+		el.setAttribute("className",clsName);
+		el.setAttribute("title",message);
+		el.setAttribute("onmouseover","RR.highlightClass("+color+",true)");
+		el.setAttribute("onmouseout","RR.highlightClass("+color+",false)");
+		
+		var wRed=0;
+		if (timeBlock.overlap>0) {
+			// Reduce width if overlap
+			wRed=1;
+		}
+		var moreLines=(template=="york"?3:0);
+		var pt=Math.floor(pos.height/2-9-(moreLines*5));
+		if (pt<0) pt=0;
+		el.style.cssText = "left:"+(newLeft+wRed)+"%;top:"+pos.top+"px;width:"+(newW-wRed*2)+"%;height:"+pos.height+"px;";//padding-top:"+pt+"px";
+		if (isOnline) {
+			text+="<i class='time_block_icon "+onlineClassIcon+"'></i>";
+		}
+		el.innerHTML = text;
+
+		var week = $divSchedule.find(".weekTimes")[0];
+		week.appendChild(el);
+		$(el).data("selkey",selkey);
+		$(el).data("cnfid",cnfid);
+		if (isPinning) {
+			$(el).data("pinned",pinned);
+		}
+		return true;
+	}
+	
+	function addImage(timeBlock,className) {
+
+		// See if we really should show it for this schedule's date range
+		if (timeBlock.d2<self.d1 || timeBlock.d1>self.d2) {
+			return;
+		}
+
+		if (!timeBlock.doesOccurBetween(self.v1,self.v2)) {
+			return;
+		}
+
+		var pos = getBlockPosition(timeBlock);
+
+		//var left = pos.left+pos.width/2-10;
+		var top = pos.top;//+pos.height/2-10;
+		var height = pos.height;
+		if (height<20) {
+			top+=height/2-10;
+			height=20;
+		}
+
+		// Create new element
+		var el = document.createElement('div');
+		var clsName = "exclBlock";
+		if (className) clsName=className;
+		el.setAttribute("class",clsName);
+		el.setAttribute("className",clsName);
+		el.setAttribute("title",timeBlock.s);
+		el.style.cssText = "left:"+pos.leftp+"%;top:"+top+"px;width:"+pos.widthp+"%;height:"+height+"px;";
+		el.innerHTML = "&nbsp;";
+
+		var week = $divSchedule.find(".weekTimes")[0];
+		week.appendChild(el);
+	}
+	
+	
+	function getBlockPosition(timeBlock) {
+		var t = Math.floor(((timeBlock.t1/60-self.firstHour)*self.hourHeightCalc)+self.headerHeightCalc);
+		var h = Math.floor((timeBlock.t2-timeBlock.t1)/60*self.hourHeightCalc-1);
+		var wp = 100/(self.lastDay-self.firstDay+1);
+		var lp = (timeBlock.day-self.firstDay)*wp;//+onePxInPerc;
+		//lp=lp-(lp/100*onePxInPerc);
+		if (lp==0) {
+			lp=onePxInPerc;
+			wp-=onePxInPerc*0.8;
+		}
+		return {top:t,height:h,leftp:lp,widthp:(wp-onePxInPerc)};
+	}
+
+	function dateToPixelPos(ymd,monthWidth) {
+		var m1=((ymd.y-dateGridStart.y)*12)+(ymd.m-dateGridStart.m)+(ymd.d/31);
+		var dl=m1*monthWidth;
+		return dl;
+	}
+	
+	function addDateBlock(ymd1, ymd2, courseNb, cn, color, title, cnfid, uselkey, pinned, showD1, showD2, hide) {
+		
+		var dl=dateToPixelPos(ymd1,100);
+		var dw=dateToPixelPos(ymd2,100)-dl;
+		
+		var dt=courseNb*16+2;
+		var dh=13;
+
+		var message="";
+		if (isPinning) {
+			if (pinned) {
+				message+=i8n.clickToUnpin;
+			} else {
+				message+=i8n.clickToPin;
+			}
+		}
+		
+		// Find the DIV to use - it should always exist
+		var _div = $("<div></div>"); 
+		var lockFunction="addPin(event,"+cnfid+",'"+uselkey+"',"+(!pinned)+",'no');";
+		if(oneShotEnrollment && hasEnrolledCourse()){
+			lockFunction = "";
+		}
+		
+		// If the DIV exists, use it instead
+		if(_div) {
+			// Class
+			var _clsName = "schedule-period bc"+color+" bd"+color+" bh"+color+(pinned&&self.largeDateGrid2?" bcpin":"");
+			
+//			if (hide) {
+	//			_clsName += " hide-course ";
+		//	}
+			_div.addClass(_clsName);
+			_div.attr("className", _clsName);
+			// Mouse actions
+			_div.attr("onmouseover","RR.highlightClass("+color+",true)");
+			_div.attr("onmouseout","RR.highlightClass("+color+",false)");
+			if (isPinning) {
+				_div.attr("onclick", lockFunction);	
+			}
+			// Title
+			_div.attr("title", message);
+			var h="<span class='mobileNUmber'>" + courseNb + "-</span>" + (title?title:"&nbsp;");
+			if (showD1) {
+				var d=getMonth(ymd1.m%12)+" "+ymd1.d;
+				h="<span class='date-left'>"+d+"</span>"+h;
+			}
+			if (showD2) {
+				var d=getMonth(ymd2.m%12)+" "+ymd2.d;
+				h+="<span class='date-right'>"+d+"</span>";
+			}
+			_div.html(h);
+			// Sizing
+			_div.css('margin-left', 'calc('+dl+'% + '+Math.floor(dl/100)+'px)');
+			_div.css('width', 'calc('+dw+'% + '+Math.floor(dw/100)+'px)');
+		}
+		
+		$divSchedule.find('.sp-listing-'+courseNb).append(_div);
+		
+		if (hide) {
+			$divSchedule.find('.sp-listing-'+courseNb).addClass("hide-course sp");
+		}
+	}
+	
+
+	function drawDateRow(courseNb,cn,color,title,classes,sessYmd1,sessYmd2,cnfid,uselkey,pinned,online,hide) {
+		
+		$divSchedule.find('.sp-listing-'+courseNb).empty();
+		
+		var edd=null; // earliest drawn date
+		// Get all timeblocks from the blocks
+		var tbs=new Array();
+		for (var i=0;i<classes.length;i++) {
+			var cls=classes[i];
+			for (var j=0;j<cls.timeblocks.length;j++) {
+				tbs.push(cls.timeblocks[j]);
+			}
+		}
+		
+		// compute the union of all d1/d2's.
+		var u=new Array();
+		
+		// First sort blocks by d1.
+		tbs.sort(function(a,b){return a.d1-b.d1;});
+
+		// Then for each block
+		// extend the current block or create a new one
+		
+		for (var i=0;i<tbs.length;i++) {
+			var tb=tbs[i];
+			if (i==0) {
+				u.push([tb.d1,tb.d2]);
+				continue;
+			}
+			var ut=u[u.length-1];
+			if (tb.d1<=ut[1]) {
+				if (tb.d2>ut[1]) ut[1]=tb.d2;
+			} else {
+				u.push([tb.d1,tb.d2]);
+			}
+		}
+		
+		var dgTitle=self.largeDateGrid2?cn:title;
+		if (online) {
+			dgTitle+=" (online)";
+		}
+		
+		for (var i=u.length-1;i>=0;i--) {
+			var ymd1=new YearMonthDay(u[i][0]);
+			var ymd2=new YearMonthDay(u[i][1]);
+			addDateBlock(ymd1, ymd2, courseNb, cn, color, (i==0?dgTitle:null), cnfid, uselkey, pinned, self.largeDateGrid2&&i==0, self.largeDateGrid2&&i==u.length-1, hide);
+			if (edd==null || ymd1.c<edd.c) {
+				edd=ymd1;
+			}
+		}
+		
+		if (u.length==0) {
+			// If there are no scheduled blocks, display
+			// session length
+			addDateBlock(sessYmd1, sessYmd2, courseNb, cn, color, dgTitle, cnfid, uselkey, pinned, self.largeDateGrid2, self.largeDateGrid2, hide);
+			if (edd==null || sessYmd1.c<edd.c) {
+				edd=sessYmd1;
+			}
+		}
+		
+		return edd;
+	}
+
+	
+	// Dragging functions:
+	
+	function mouseCoords(ev){
+		//touch event co ordinates
+		if (ev.originalEvent && ev.originalEvent.touches) {
+			if (ev.originalEvent.touches || ev.originalEvent.changedTouches) {
+				var vev = ev.originalEvent.changedTouches[0] || ev.originalEvent.touches[0];
+				if (vev && (vev.pageX || vev.pageY)) {
+					return {
+						x : vev.pageX,
+						y : vev.pageY
+					};
+				}
+			}
+		}
+		// desktop event co ordinates
+		if(ev.pageX || ev.pageY){
+			return {x:ev.pageX, y:ev.pageY};
+		}
+		return {
+			x:ev.clientX + (document.documentElement.scrollLeft?document.documentElement.scrollLeft:document.body.scrollLeft) - document.body.clientLeft,
+			y:ev.clientY + (document.documentElement.scrollTop?document.documentElement.scrollTop:document.body.scrollTop) - document.body.clientTop
+		};
+	}
+	
+	function getDayTime(ev) {
+		ev           = ev || window.event;
+		var mousePos = mouseCoords(ev);
+		return getDayTime2(mousePos);
+	}
+	
+	function getDayTime2(mousePos) {
+
+		var dx = mousePos.x-schedulePos.x;
+		var dy = mousePos.y-schedulePos.y-self.headerHeightCalc;
+
+		var d = Math.floor(dx/self.dayWidth+self.firstDay);
+		var h = calculateHourSlot(dy/self.hourHeightCalc+self.firstHour);
+
+		// If out of current schedule properties range return null
+		if (d<self.firstDay || d>self.lastDay || h<self.firstHour || h>self.lastHour) {
+			return null;
+		}
+
+		return {day:d,hour:h};
+	}
+	
+	function mouseDown(ev) {
+		mouseDown2(ev,false);
+	}
+
+	function calculateHourSlot(num) {
+		var intervalCountInHour = 60/blockTimeInterval;
+	    return Math.floor(num*intervalCountInHour)/intervalCountInHour;
+	}
+	function touchStart(ev) {
+		mouseDown2(ev,true);
+	}
+	
+	function mouseDown2(ev,isTouch) {
+		if (tap || BB.popuplive || (BB.page!="results" && !BB.wideScreen)) return true;
+		
+		// We must do this the first time:
+		var $weekArea = $divSchedule.find(".weekArea");
+		if ($weekArea.length<1) {
+			// no schedule drawn yet.
+			return true;
+		}
+		schedulePos = getPosition($weekArea[0]);
+		self.dayWidth=$weekArea.width()/(self.lastDay-self.firstDay+1);
+		startCoords = mouseCoords(ev);
+		coords = startCoords;
+		
+		if (isTouch) {
+			touchTime=(new Date()).getTime();
+			holdTimeout=setTimeout(function() {
+				mouseMove2(false,true);
+			},timeToHold);
+		}
+	}
+	
+	function mouseMove(ev) {
+		mouseMove2(ev,false);
+	}
+	
+	function touchMove(ev) {
+		mouseMove2(ev,true);
+	}
+	
+	function mouseMove2(ev,isTouch) {
+		if (startCoords==null) return;
+		//consolelog("move touch?"+isTouch);
+		if (ev) {
+			coords = mouseCoords(ev);
+		}
+		
+		var startDrag=(!isTouch && (Math.abs(coords.x-startCoords.x)>3 || Math.abs(coords.y-startCoords.y)>3));
+		var now=(new Date()).getTime();
+		if (!startDrag && isTouch && touchTime!=null && dragDayHourStart==null) {
+			if (now>touchTime+timeToHold) {
+				// Touch held long enough
+				//consolelog("longg");
+				if (Math.abs(coords.x-startCoords.x)<7 && Math.abs(coords.y-startCoords.y)<7) {
+					// Touch held without moving too much
+					startDrag=true;
+				}
+			}
+		}
+		if (startDrag) {
+			if (dragDayHourStart==null) {
+				dragDayHourStart=getDayTime2(coords);
+			}
+		}
+		if (dragDayHourStart!=null) {
+			
+			if (isTouch) {
+				if (ev) ev.preventDefault();
+			}
+			
+			var dayHour=getDayTime2(coords);
+			// See if any change:
+			if (dayHour!=null && (dragDayHourUnderMouse==null || dayHour.day!=dragDayHourUnderMouse.day || dayHour.hour!=dragDayHourUnderMouse.hour)) {
+				dragDayHourUnderMouse=dayHour;
+				refreshCurrentBusyBlock(dragDayHourStart,dayHour);
+			}
+		} else if (isTouch && now<(touchTime+1400) && Math.abs(coords.x-startCoords.x)>130 && Math.abs(coords.y-startCoords.y)<100) {
+			// Do swipe
+			if (coords.x<startCoords.x) {
+				// left
+				UU.caseNextResult(); //go next and do not allow scroll
+			} else {
+				// right
+				UU.casePrevResult(); //got prev and do not allow scroll
+			}
+			touchTime=null;
+			startCoords=null;
+			ev.preventDefault();
+			//we have to stop the regular event propagation
+			ev.stopPropagation();
+			return false;
+		}
+	}
+
+	
+	function mouseUp(ev) {
+		return mouseUp2(ev,false);
+	}
+
+	function touchEnd(ev) {
+		return mouseUp2(ev,true);
+	}
+	
+	function mouseUp2(ev,isTouch) {
+		if (startCoords==null || BB.enrollMode || BB.popuplive || (BB.page!="results" && !BB.wideScreen) || schedulePos==null) {
+			return true;
+		}
+		if (holdTimeout) {
+			clearTimeout(holdTimeout);
+			holdTimeout=null;
+		}
+		coords = mouseCoords(ev);
+		var now=(new Date()).getTime();
+		
+		//consolelog("up x:"+Math.abs(coords.x-startCoords.x)+" y:"+Math.abs(coords.y-startCoords.y));
+		//consolelog("now:"+now);
+		//consolelog("ttt:"+touchTime);
+		
+		if (dragDayHourStart==null && Math.abs(coords.x-startCoords.x)<7 && Math.abs(coords.y-startCoords.y)<7) {
+			// Do Tap
+			tap=true;
+			setTimeout(function() {tap=false;},100);
+			var $o=overTimeBlock(ev);
+			if ($o!=null) {
+				ev.preventDefault();
+				var selkey=$o.data("selkey");
+				var pinned=$o.data("pinned");
+				var cnfid=$o.data("cnfid");
+				if (isPinning && pinned!=null) {
+					if(oneShotEnrollment && hasEnrolledCourse()){
+						return;
+					}
+					addPin(ev,cnfid,selkey,!pinned,'no');	
+				}
+				touchTime=null;
+				startCoords=null;
+				return false;
+			} else {
+				var dayHour = getDayTime2(coords);
+				dragDayHourStart=dayHour;
+				dragDayHourUnderMouse=dayHour;
+			}
+		}
+		if (dragDayHourStart!=null && dragDayHourUnderMouse!=null) {
+			// Do Drag complete.
+			var ds=dragDayHourStart;
+			var de=dragDayHourUnderMouse;
+			setTimeout(function() {
+				UU.caseChangePersonalTimeBlock(self.d1,self.d2,{day:ds.day,hour:ds.hour},{day:de.day,hour:de.hour});
+			},20)
+		}
+		touchTime=null;
+		startCoords=null;
+		dragDayHourStart=null;
+		dragDayHourUnderMouse=null;
+		return true;
+	}
+	
+	function overTimeBlock(ev) {
+		var $t=$(ev.target);
+		if ($t.hasClass("time_block")) return $t;
+		var $tp=$t.parent();
+		if ($tp.hasClass("time_block")) return $tp;
+		var $tp=$tp.parent();
+		if ($tp.hasClass("time_block")) return $tp;
+		return null;
+	}
+	
+	function refreshCurrentBusyBlock(dayHourA,dayHourB) {
+		var r = sortDayHours(dayHourA,dayHourB);
+		var dayHour1 = r.first;
+		var dayHour2 = r.last;
+
+		refreshes++;
+		var $busyDiv=$divSchedule.find(".currentBusyBlocks");
+		$busyDiv.empty();
+		for (var d=dayHour1.day; d<=dayHour2.day; d++) {
+			var timeblock = new TimeBlock(0,d,dayHour1.hour*60,dayHour2.hour*60+blockTimeInterval,0,0,"",false);
+			var pos = getBlockPosition(timeblock);
+
+			// Create new element
+			var el = document.createElement('div');
+			el.setAttribute("class","busy_block");
+			el.setAttribute("className","busy_block");
+			el.style.cssText = "left:"+pos.leftp+"%;top:"+pos.top+"px;width:"+pos.widthp+"%;height:"+pos.height+"px;";
+			$busyDiv[0].appendChild(el);
+		}
+	}
+	
+	function refreshBusyBlocks(gState) {
+		
+		$divSchedule.find(".busy_block").remove();
+		
+		if (gState==null) return;
+		
+		var $weekTimes = $divSchedule.find(".weekTimes");
+		var bd=$weekTimes[0];
+		
+		for (var blocki=0; blocki<gState.bbs.length; blocki++) {
+			var busyBlock=gState.bbs[blocki];
+
+			// Skip if busyBlock.day is outside timetable self.firstDay to self.lastDay range.
+			if (busyBlock.day<self.firstDay || busyBlock.day>self.lastDay) {
+				continue;
+			}
+			
+			// Skip if doesn't apply to range.
+			if (busyBlock.d2<self.d1 || busyBlock.d1>self.d2) {
+				continue;
+			}
+			
+			var d=busyBlock.day;
+			
+			// Skip if time doesn't apply
+			var h1=busyBlock.hourStart;
+			if (h1<self.firstHour) h1=self.firstHour;
+			if (h1>busyBlock.hourEnd) {
+				continue;
+			}
+			
+			var timeblock = new TimeBlock(0,d,h1*60,busyBlock.hourEnd*60+blockTimeInterval,0,0,"",false);
+			var pos = getBlockPosition(timeblock);
+
+			// Create new element
+			var el = document.createElement('div');
+			el.setAttribute("class","busy_block");
+			el.setAttribute("className","busy_block");
+			if (scheduleDest.indexOf("preview")<0) {
+				el.setAttribute("title",i8n.clickToRemove);
+			}
+			el.style.cssText = "left:"+pos.leftp+"%;top:"+pos.top+"px;width:"+pos.widthp+"%;height:"+pos.height+"px;";
+			if (bd.childElementCount>0) {
+				bd.insertBefore(el,bd.childNodes[0]);
+			} else {
+				bd.appendChild(el);
+			}
+		}
+
+		if(Profiler.exists()) {
+			Profiler.get("blockUsage").updateBlocks();
+		}
+	}
+	
+	function addAvoidTime(string) {
+		var french=false;
+		if (BB.lang=="fr") french=true;
+		var days1=["lordsday","sunday","monday","tuesday","wednesday","thursday","friday","saturday","sabbath"];
+		var days2=["d","d","m","t","w","r","f","s","s"];
+		var days3=["d","m","t","w","r","f","s"];
+		if (french) {
+			days1=["dimanche","lundi___","mardi___","mercredi","jeudi___","vendredi","samedi__","sabbat__"];
+			days2=["d","q","t","w","r","f","s","s"]; // q is to prevent Monday from becoming Mardi.
+			days3=["d","q","t","w","r","f","s"];
+		}
+		var t=string;
+		t=t.toLowerCase();
+		t=t.replace(" ","");
+		t=t.replace("'","");
+		if (french) {
+			t=t.replace(" a ","-");
+			t=t.replace(" à ","-");
+		} else {
+			t=t.replace("to","-");
+		}
+		t=t.replace("_","-");
+		t=t.replace("until","-");
+		t=t.replace("through","-");
+		t=t.replace("from","");
+		t=t.replace("am","y");
+		t=t.replace("pm","z");
+		if (french) {
+			t=t.replace("avant",">");
+			t=t.replace("apres","<");
+			t=t.replace("après","<");
+		} else {
+			t=t.replace("after",">");
+			t=t.replace("before","<");
+		}
+		t=t.replace(/:\d\d/g, "");
+		if (french) {
+			t=t.replace("mm", "marmer");			
+		} else {
+			t=t.replace("ss", "ds");
+			t=t.replace("tt", "tr");
+			t=t.replace("wt", "wr");
+			t=t.replace("sm", "dm");
+			t=t.replace("st", "dt");
+			t=t.replace("sw", "dw");
+			t=t.replace("sr", "dr");
+			t=t.replace("sf", "df");
+		}
+		for (var c=0;c<10;c++) {
+			for (var i=0; i<days1.length; i++) {
+				var d1=days1[i];
+				if (d1.length<(french?1:2)) continue;
+				var d2=days2[i];
+				
+				t=t.replace(d1,d2);
+				
+				// Chop off last character
+				days1[i]=days1[i].substr(0,days1[i].length-1);
+			}
+		}
+		
+		//alert(t);
+		
+		var days=new Array();
+		var prevDay=null;
+		var firstDay=null;
+		// Extract days
+		for (var i=0;i<t.length;i++) {
+			var c=t.charAt(i);
+			if (c=='-' && prevDay!=null) {
+				firstDay=prevDay;
+			} else {
+				for (var d=0;d<days3.length;d++) {
+					if (c==days3[d]) {
+						days.push(d);
+						if (firstDay!=null) {
+							// There was a range.
+							for (var d2=firstDay+1;d2<d;d2++) {
+								days.push(d2);
+							}
+							firstDay=null; // stop the range
+						}
+						prevDay=d;
+						break;
+					}
+				}
+			}
+		}
+		
+		// Extract hours
+		var h1="";
+		var h1pm=null;
+		var h2="";
+		var h2pm=null;
+		var on1=true;
+		for (var i=0;i<t.length;i++) {
+			var c=t.charAt(i);
+			if (c>='0'&&c<='9') {
+				if (on1) {
+					h1+=c;
+				} else {
+					h2+=c;
+				}
+			} else if (c=='y'||c=='z') {
+				if (on1) {
+					h1pm=(c=='z');
+				} else {
+					h2pm=(c=='z');
+				}
+			} else if ((c=="-" && h1!="") || c=="<") {
+				on1=false;
+			}
+		}
+		if (h1=="") h1="0";
+		if (h2=="") h2="23";
+		h1=+h1;
+		h2=+h2;
+		if (h1pm==null&&h2pm==null) h1pm=h2pm=false;
+		if (h1pm==null&&h2pm!=null) h1pm=h2pm;
+		if (h2pm==null&&h1pm!=null) h2pm=h1pm;
+		if (h1pm&&h1<12) h1+=12;
+		if (h2pm&&h2<12) h2+=12;
+		if (h2pm&&h1>h2) h1-=12;
+		if (!h1pm&&h1>h2) h2+=12;
+		
+		if (h1<0 || h1>24 || h2<0 || h2>24) {
+			days=[]; // not good
+		}
+		
+		//alert("days:"+days+" t:"+h1+"-"+h2);
+		
+		var notice=i8n.added;
+		for (var d=0;d<days.length;d++) {
+			if (d>0) {
+				notice+=", ";
+			}
+			var day=days[d]+1;
+			notice+=getDay2(day);
+			
+			var blockTimeIntervalFraction = blockTimeInterval/60.0;
+			UU.caseChangePersonalTimeBlock(self.d1,self.d2,{day:day,hour:h1},{day:day,hour:(h2-blockTimeIntervalFraction)},false);
+		}
+		notice+=" "+h1+":00 "+i8n.to+" "+h2+":00";
+
+		var good=true;
+		if (days.length<=0) {
+			notice= i8n.ReviewExamples; // Could not understand input. Review examples.
+			good=false;
+		} else {
+			$divSchedule.find(".timesToAvoidBubble").slideUp(800);
+		}
+		setAvoidNotice(notice,good);
+		$divSchedule.find(".add_avoid_time").val("");
+		
+	}
+
+	function setAvoidNotice(message,good) {
+		var $an=$divSchedule.find(".avoidNotice");
+		$an.removeClass("warningNote"+(good?"Bad":"Good"));		
+		$an.addClass("warningNote"+(good?"Good":"Bad"));
+		$an.html("<span>"+message+"</span>");
+		_alert(message);
+	}
+	
+	function clearAvoidTimes() {
+		UU.caseClearPersonalTimeBlocks();
+		setAvoidNotice(i8n.personalCleared,true);
+		$divSchedule.find(".timesToAvoidBubble").slideDown(800);
+	}
+
+}

@@ -1,0 +1,177 @@
+"use strict";
+
+var SLIDER = (function() {
+
+	var my = {};
+	var tipNumberMax=3;
+	var tipWhenHidden=1;
+	var shownYet=false;
+	my.tipContents= ["a","tip_drag.png",i8n.tipClickAndDragTitle,i8n.tipClickAndDrag, i8n.tipClickAndDragMobile,
+	                 "b","tip_pin.gif",i8n.tipClickToPinTitle,i8n.tipClickToPin,i8n.tipClickToPinMobile,
+	                 "c","tip_arrows.jpg",i8n.tipUseArrowsTitle,i8n.tipUseArrows,i8n.tipUseArrowsMobile,
+	                 "d","tip_filter.png",i8n.tipFiltersTitle,i8n.tipFilters,i8n.tipFilters];
+	               
+	if (shortUrl) {
+		my.tipContents=my.tipContents.concat(["e","tip_share.png",i8n.tipCreateShareLinkTitle,i8n.tipCreateShareLink,i8n.tipCreateShareLink]);
+	}
+	
+	if (isAdvisor && showRecommendationNumbers && recommendScheduleEnabled) {
+		my.tipContents=my.tipContents.concat(["e","tip_image5.png",i8n.tipRecommendNumbersTitle,i8n.tipRecommendNumbers,i8n.tipRecommendNumbers]);
+	}
+	
+	if (typeof custExtraTipContents != 'undefined') {
+		my.tipContents=my.tipContents.concat(custExtraTipContents());
+	}
+	
+	tipNumberMax = my.tipContents.length/5;
+	
+	my.renderSlider = function() {
+		$(".tips_counter").toggle(BB.tip!=0);
+		$(".tips_counter_nb").text(tipNumberMax);
+	}
+	
+	// Add fade animation to drawSliderTip
+	function animateSliderTip() {
+		$('#popuptips .popup-title, #popuptips .tips-image, #popuptips .popup-subtitle')
+			.animate(
+				{ opacity: 0 },
+				100,
+				function() {
+					drawSliderTip();
+					$('#popuptips .popup-title, #popuptips .tips-image, #popuptips .popup-subtitle')
+						.animate({ opacity: 1 },100);
+				});
+
+	}
+	
+	function drawSliderTip() {
+		var index=(BB.tip-1)*5;
+		if (index<0) index=0;
+		var imgs=my.tipContents[index+1];
+		var img="images/"+imgs;
+		var title=my.tipContents[index+2];
+		var txt=my.tipContents[index+3];
+		var txtMobile=my.tipContents[index+4];
+		
+		$("#slider_tip_nb").html(BB.tip);
+		$("#slider_tip_img").attr("src",img).toggle(imgs!=null);
+		$("#slider_tip_img").attr("alt",title+" tip screenshot");
+		$("#popuptips .popup-subtitle").html([
+			"<h4 class='visuallyhidden' aria-label='"+title + ". " + txt.replace(/<\/(.*)>/, ' ').replace(/<(.*)>/, ' ')+"'></h4>",
+		     "<div class='nomobile'>"+txt+"</div>",
+		     "<div class='phoneOnly'>"+txtMobile+"</div>"
+		].join(""));
+		$("#popuptips .popup-title").html([
+			"<div class='nomobile'>"+title+"</div>",
+			"<div class='phoneOnly'>"+title+"</div>"
+			].join(""));
+		
+		var skipOne=$(".reg_filter:visible").length>0;
+		
+		if ($(".tips-carousel").html().trim().length==0) {
+			var carousel = "";
+			for (var n=1; n<=my.tipContents.length / 5; n++){
+				var selected = n === BB.tip? "selected" : ""; 
+
+				if (skipOne && my.tipContents[n*5]=="d") continue;
+
+				carousel += '<span class="tips-carousel-item" onclick="SLIDER.goTo(' + n + ')">' +
+							 	'<i class="fa fa-circle ' + selected + '"></i>' +
+							'</span>';
+			}
+			$(".tips-carousel").html(carousel);
+		} else {
+			var n=1;
+			$(".tips-carousel-item").each(function() {
+				$(this).find(".fa-circle").toggleClass("selected",n==BB.tip);
+
+				if (skipOne && my.tipContents[n*5]=="d") n++;
+
+				n++;
+			});
+		}
+
+		var downX;
+		var moveX;
+
+		$("#popuptips").off("mousedown");
+		$("#popuptips").off("touchstart");
+		$("#popuptips").on("touchstart", function(e) {
+			downX = e.originalEvent.touches[0].pageX;
+		});	
+		$("#popuptips").off("touchmove");
+		$("#popuptips").on("touchmove", function(e) {
+			moveX = e.originalEvent.touches[0].pageX;
+		});	
+		$("#popuptips").off("touchend");
+		$("#popuptips").on("touchend", function(e) {
+			if (!downX || !moveX) {
+				return;
+			}
+
+			var offsetX = downX - moveX;
+			
+			if (Math.abs(offsetX) > 40) {
+				my.sliderChange(offsetX > 0);
+			}
+
+			downX = undefined;
+			moveX = undefined;
+		});	
+		
+	}
+	
+	my.showNewTip = function() {
+		my.sliderChange(true);
+		shownYet=true;
+	}
+	
+	my.sliderChange = function(isRight) {
+		if (BB.tip==0) return;
+		if (isRight) {
+			BB.tip++;
+			if (BB.tip>tipNumberMax) BB.tip=1;
+		} else {
+			BB.tip--;
+			if (BB.tip<1) BB.tip=tipNumberMax;
+		}
+		
+		// If not using the "FILTERS" popup:
+		if (my.tipContents[(BB.tip-1)*5]=="d" && $(".reg_filter:visible").length>0) {
+			// skip this one
+			my.sliderChange(isRight);
+		}
+		
+		animateSliderTip();
+	}
+	
+	my.goTo = function(tip) {
+		if (tip<=tipNumberMax && tip >=0) {
+			BB.tip=tip;
+		}
+		animateSliderTip();
+	}
+	
+	my.hideTip = function() {
+		tipWhenHidden=BB.tip;
+		UU.caseSuppressTips();
+	}
+	
+	my.showTip = function() {
+		// Preload images so they will not flicker
+		var pres=[];
+		for (var i=0;i<tipNumberMax;i++) {
+			pres.push("images/"+my.tipContents[i*5+1]);
+		}
+		preload(pres);
+		$(".tips_counter").hide();
+		BB.tip=tipWhenHidden;
+		setCookie("tip",BB.tip,30);
+		drawSliderTip();
+		
+		RR.updateFocus("#popupfilter");
+	}
+	
+	return my;
+
+}());

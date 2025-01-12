@@ -1,0 +1,1136 @@
+
+function renderCodeNumberFilter2(cnf,firstInReq,lastInReq,index,gcams) {
+	
+	var cnPro=cnf.cnPro;
+	var cn=cnPro.cn;
+	var $clone=null;
+	var globalFilterOk=(cnPro.stoptext.indexOf("selAddCam")>=0);
+	var rand=(""+Math.random()).replace(".","");
+
+	function domChecksToCodeNumberFilter() {
+		var sa=cnf.sa;
+		if (sa==null) sa="";
+		var all=true;
+		$clone.find(".class_chk").each(function() {
+			var cfsi=$(this).data("cfsi");
+			while (sa.length<cfsi) {
+				sa+="l";
+			}
+			var v=$(this).prop("checked");
+			if (!v) all=false;
+			var c=(v?"l":"i");
+			if (sa.charAt(cfsi)!=c) {
+				sa = sa.substr(0, cfsi) + c + sa.substr(cfsi+1);
+			}
+		});
+		if (!all /* && cnf.drop=='al'*/) {
+			cnf.setDrop("ss");
+			renderDropdown();
+		}
+		UU.caseChangeSelectionMask(cnf,sa);
+	}
+	function selectAllNone(isAll,$cont) {
+		$cont.find("input:checkbox:enabled").prop("checked",isAll).parent().toggleClass("is-checked",isAll);
+		
+		if ($cont.find(".class_checkboxes").length>0) {			
+			domChecksToCodeNumberFilter();
+		} else if ($cont.find(".campus_checkboxes").length>0) {
+			$cont.find(".cnf_cam_chk").each(function(ev) {
+				if ($(this).prop("disabled")) return;
+				var cam = $(this).data("cam");
+				var pos = $(this).is(":checked");
+				if (pos) {
+					cnf.ca[cam]=true;
+					delete cnf.cr[cam]
+				} else {
+					cnf.cr[cam]=true;
+					delete cnf.ca[cam];
+				}
+			});
+			UU.caseChangeCampusAmmend();
+		}
+	}
+	// See if course already in DOM
+	var $clone=null;
+	$(".requirementDiv2").each(function() {
+		if (cnf.cnfid==$(this).data("cnfid")) {
+			$clone=$(this);
+		}
+	})
+
+	// Clone Course Template if it wasn't in the DOM
+	var isNew=true;
+	if ($clone==null) {
+		$clone = $("#templateCourse2").clone();
+		$clone.find("input.dynID").attr("aria-label", cn.code + " "  + cn.number + " " + cn.title);
+		$clone.removeAttr("id");
+		$clone.data("cnfid",cnf.cnfid);
+		$clone.find(".dynID").each(function() {
+			var id=$(this).prop("id");
+			if (id) {
+				$(this).prop("id",id+"_"+cnf.cnfid);
+			}
+			var fori=$(this).attr("for");
+			if (fori) {
+				$(this).attr("for",fori+"_"+cnf.cnfid);
+			}
+		});
+		deObfuscateMdl($clone);
+	} else {
+		isNew=false;
+	}
+	
+	function renderDropdown() {
+		var animate=true;
+		var $ds=$clone.find(".dropdownSelect")
+		if ($ds.val()!=cnf.drop) {
+			$ds.val(cnf.drop);
+			if ($ds.val()!=cnf.drop) {
+
+				var try2=false;
+				var sec=cnf.drop.substr(3);
+
+				// May happen if pinning selects a usel default key, but special usel key is being used
+				// or if "kp_" (keeps) in URL and logout.
+				if (cnf.drop.indexOf("us_")==0 || cnf.drop.indexOf("kp_")==0 || cnf.drop.indexOf("dp_")==0) {
+					var selPro=cnf.getSelPro(sec);
+					if (selPro) {
+						for (var i=0;i<selPro.uselPro.selPros.length;i++) {
+							var key=selPro.uselPro.selPros[i].sel.key;
+							var d2="us_"+key;
+							$ds.val(d2);
+							if ($ds.val()==d2) {
+								cnf.drop=d2;
+								try2=true;
+								break;
+							}
+						}
+					}
+				}
+
+				if (!try2 && UU.campusLoadDone) {
+					// Using something like
+					// criteria.jsp?term=201630&courses=30133,32122
+					// caused this to run when it shouldn't, hence
+					// UU.campusLoadDone
+					var mkey="requestedClassNotOffered";
+					if (BB.activeState.locs["any"]) {
+						mkey="requestedClassCancelled";
+					}
+					var secD=sec;
+					if (sec.indexOf("_")>=0) {
+						secD=secD.split("_")[1].replace(/-/g," ").trim().replace(/ /g,"/");
+					}
+					RR.addBadWarning(cnf.cnKey+": "+i8n.s(mkey,secD));
+					cnf.drop="al";
+					$ds.val("al");
+					cnf.applyFilters(BB.activeState.cams,BB.activeState.locs,BB.activeState.instruct, BB.activeState.session);
+				}
+
+			}
+			animate=false;
+			
+			$clone.find(".cbox-dropdown").removeClass("cbox-dropdown-normal");
+			$clone.find(".cbox-dropdown")[0].offsetHeight; // Cause browser reflow
+			$clone.find(".cbox-dropdown").addClass("cbox-dropdown-normal");
+		}
+		var speed = (animate?300:0);
+		if (cnf.drop=="ss"&&cnf.allowExpand) {
+	    	expandRegion(true,speed);
+	    } else {
+	    	//expandRegion(false);
+	    }
+		// see isPinned function
+		$clone.find(".dropdownLockImg").toggle(cnf.lockdrop);
+		var pin=cnf.isPinned() && !cnf.lockdrop;
+		var $p=$clone.find(".dropdownPinImg")
+		$p.toggle(pin);
+		if (pin) {
+			$p.off().click(function(event) {
+				if((oneShotEnrollment || coursesLocked.includes(cnf.cnKey)) && hasEnrolledCourse()){
+					return;
+				}
+				addPin(event,cnf.cnfid,cnf.getDropdownSelPro().uselPro.usel.key,false,'no');
+			}).attr("title",i8n.clickToUnpin);
+		}
+		//Check For Selected Section is Approved then show Register button
+		if(displayCourseRegisterLink){
+			UU.showHideRegisterButton(cnf,$ds.val(), $ds);
+		}
+		// We do this again later
+		renderDropdownWidth();
+	}
+	
+	function renderDropdownWidth() {
+		var seltext=$clone.find(".dropdownSelect option:selected").text();
+		var w2=$clone.find(".cbox-header").width()-15;
+		if (w2<=0) return;
+		var w=$("#size-tester").text(seltext).width()+38;
+		if (w>w2) w=w2;
+		$clone.find(".dropdownSelect").css("max-width",w+"px");
+	}
+	
+	// Expand, Collapse, or toggle expansion
+	function expandRegion(open,speed) {
+		var $cbox = $clone.find(".cbox");
+		if (!open) {
+			open = $cbox.hasClass("expanded");
+			open = !open;
+		}
+		if (!speed) {
+			speed=200;
+		}
+		
+		var d=$clone.find(".dropdownSelect").get(0);
+		if (open) {
+			// Change the dropdown value to "Specific Sections" if it exists.
+//			if (d.value=="al") {
+//				var haveSS=false;
+//				for (var k=0;k<d.options.length;k++) {
+//					if (d.options[k].value=="ss") {
+//						haveSS=true;
+//						break;
+//					}
+//				}
+//				if (haveSS) {
+//					cnf.setDrop("ss");
+//					renderDropdown();
+//				}
+//			}
+		} else {
+			function isAllSelected() {
+				var boxes=$clone.find(".class_chk").length;
+				var checked=$clone.find(".class_chk:checked").length;
+				return (boxes==checked);
+			}
+
+			if (isAllSelected() && d.value.indexOf("ss")==0) {
+				cnf.setDrop("al");
+				renderDropdown();
+			}
+		}
+		
+		
+		$cbox.toggleClass("expanded", open);
+		var $ex = $cbox.find(".cbox-expansion");
+		if (open) {
+			$ex.slideDown(speed,function() {PAGES.safariSettle();});
+		} else {
+			$ex.slideUp(speed,function() {PAGES.safariSettle();});
+		}
+		updateExpandTip();
+	}
+	
+	function renderWarnings() {
+		
+		$clone.find(".cbox-warnings").remove();
+		
+		function addWarning(text,calm) {
+			if (!(text) || text.length<0) return;
+			var wh="<div class='cbox-warnings' "+(calm?"style='color:#444444'":"")+">";
+			if (!calm) {
+				wh+="<i class='fa fa-exclamation-triangle'></i> ";
+			}
+			wh+=text;
+			wh+="</div>";
+			$clone.find(".cbox-expansion").before(wh);
+		}
+		
+		// Update warnings
+		for (var i=0;i<cnPro.warnings.length;i++) {
+			addWarning(cnPro.warnings[i]);
+		}
+		
+		// Add stoptext
+		if (cnPro.stoptext.indexOf("noentry")>=0 && cnPro.stoptext.indexOf("cam_ammed_in_use")<0) {
+			addWarning(cnPro.stoptext);
+		}
+		
+		
+		// DEMO logic
+		//if (cnPro.cn.key=="COMM-210") {
+		//	var haveIt=false;
+		//	for (var i=0;i<BB.activeState.cnfs.length;i++) {
+		//		if (BB.activeState.cnfs[i].cnKey=="TECH-301") {
+		//			haveIt=true;
+		//		}
+		//	}
+		//	addWarning("Requirements: TECH 301 must be taken concurrently",haveIt);
+		//}
+		
+	}
+	
+	// Show or hide "time highlight"
+	function scopepreserveSel(cfsi,show) {
+		var selPro=spMap[cfsi];
+		return function() {
+			//alert(selPro.sel.key + ":" + show);
+			if (!BB.wideScreen) return;
+			if (schedule!=null) {
+				if (show) {
+					schedule.drawTimeHighlight(selPro.sel);
+				} else {
+					schedule.removeTimeHighlights();
+				}
+			}
+			if (schedule2!=null) {
+				if (show) {
+					schedule2.drawTimeHighlight(selPro.sel);
+				} else {
+					schedule2.removeTimeHighlights();
+				}
+			}
+		}
+	}
+	
+	function scopepreserveSelForPin(cfsi,addIt) {
+		var selPro=spMap[cfsi];
+		return function(ev) {
+			if (!selPro.isPinned()) {
+				selPro.cnf.oldDrop="al"; // In case "Try online only", then pin class that isn't online
+				UU.casePinSel(selPro.cnf,selPro.sel.key);
+			} else {
+				UU.casePin(selPro.cnf,false);
+			}
+		}
+	}
+	
+	
+	var $ic=$clone.find(".ignore_check").off().change(function () {
+		var ignore=!($(this).is(":checked"));
+		if (ignore && cnf.enr.length>0) {
+			// set to drop
+			UU.caseRemoveCourse($(this).parents('.requirementDiv2').data('cnfid'),false,true);
+		}
+		if (!ignore && cnf.drop.indexOf("dp_")==0) {
+			// set to keep
+			UU.caseRemoveCourse($(this).parents('.requirementDiv2').data('cnfid'),true,true);
+		}
+		UU.caseChangeIgnore(cnf,ignore);
+	});
+	$ic.prop("checked",!cnf.ignore).parent().toggleClass("is-checked",!cnf.ignore);
+	$ic.prop("disabled",isAdvisor&&cnf.lock).parent().toggleClass("is-disabled",isAdvisor&&cnf.lock);
+	$ic.toggle(isAdvisor||!cnf.lock);
+
+	var atomicId=cnf.getAtomicId();
+	//atomicId has groupRule
+	$clone.find(".block_piece_indicator_cont").toggle(atomicId!=null && atomicId!='');
+	$clone.toggleClass("cnf_baggage",cnf.isBaggage);
+
+	$clone.find(".cnf_lock").toggle(cnf.lock||(isAdvisor&&recommendScheduleEnabled));	
+	$clone.find(".cnf_locked").toggle(cnf.lock);
+	$clone.find(".cnf_unlocked").toggle(!cnf.lock);
+	$clone.find(".cnf_locker_tip").text(cnf.lock?(isAdvisor?"Click to unlock this course":i8n.isCourseRequirement):"Click to lock this course so that if this schedule is recommended to a student, it will force the student to include this course.");
+	$clone.find(".cbox").toggleClass("cbox-unlocked",!cnf.lock);
+	$clone.find(".cnf_lock").toggleClass("cnf_lock_shader",cnf.lock);
+	
+	$clone.find(".class_locker_button").toggle(cnf.lockdrop||(isAdvisor&&recommendScheduleEnabled));
+	$clone.find(".class_unlocked").toggle(!cnf.lockdrop);
+	$clone.find(".class_locked").toggle(cnf.lockdrop);
+	$clone.find(".cnf_class_lock_tip").text(cnf.lockdrop?(isAdvisor?"Click to unlock this class":i8n.isClassRequirement):"Click to lock this class so that if this schedule is recommended to a student, it will force the student to take the selected class.");
+	$clone.find(".dropdownLockImg").toggle(cnf.lockdrop);
+	$clone.find(".cbox-dropdown-cont").toggleClass("cbox-dropdown-cont-highlight",cnf.lockdrop);
+	if((oneShotEnrollment || coursesLocked.includes(cnf.cnKey)) && hasEnrolledCourse()){
+		$clone.find(".dropdownSelect").prop("disabled",true);
+	}else{
+		$clone.find(".dropdownSelect").prop("disabled",cnf.lockdrop);
+	}
+	
+	var isDropped=cnf.drop.indexOf("dp_")==0;
+	var undo=cnf.baggage&&cnf.baggage.cnKey?true:false;
+	
+	var remMsg=cnf.lock?i8n.isCourseRequirement:(!disableEnroll&&cnf.enr.length>0?i8n.planToDrop:(cnf.cart.length>0?(isAdvising?i8n.advisorCannotRemoveFromShoppingCart:i8n.removeFromShoppingCart):i8n.removeCourseFromSearch));
+	if (isDropped) {
+		remMsg=i8n.keepCourse;
+	}
+	if (undo) {
+		remMsg="Switch back to the course already enrolled in";
+	}
+	$clone.find(".cnf_trash_tip").text(remMsg);
+	var disableTrashButton=isAuthenticated&&(cnf.lock||cnf.cart.length>0&&isAdvising||oneShotEnrollment||coursesLocked.includes(cnf.cnKey)||(hasPlans && template=="dur"));
+	$clone.find(".cnf_trash_button").css("cursor",(disableTrashButton?"not-allowed":"default"));
+	if(disableTrashButton) {
+		$clone.find(".cnf_trash_button").prop('disabled', true);
+	}
+	$clone.find(".cbox-trash-icon-open").toggle(!undo&&isDropped);
+	$clone.find(".cbox-trash-icon")     .toggle(!undo&&!isDropped);
+	$clone.find(".cbox-trash-icon-undo").toggle(undo);
+	
+	var tots=cnf.computeTotals();
+	//$clone.find(".cnf_consider").text(""+tots.tsels+" Options");
+	//var ct="";
+	//if (tots.tusels==tots.tsels) {
+	//	ct=i8n.s("Course has {} distinct timetable options. ",tots.tusels);
+	//} else {
+	//	ct=i8n.s("Course has {} options to choose from, but some have the same meet times, resulting in {} distinct timetable option{}. ",tots.tsels,tots.tusels,(tots.tusels==1?"":"s"));
+	//}
+	//if (tots.tselsInc!=tots.tsels) {
+	//	ct+=i8n.s("{} options are being filtered out, so you are considering the remaining {} option{}.",(tots.tsels-tots.tselsInc),tots.tselsInc,(tots.tselsInc==1?"":"s"));
+	//}
+	//$clone.find(".cnf_consider_tip").html(ct);
+	
+	var descCams=getDescribeCampuses(cnPro.ecams,60)
+	$clone.find(".cnf_campus_info").text(descCams+" ");
+	if (descCams.length<=0 || !filterCampus) {
+		$clone.find(".cnf_campus_info").html(" &nbsp; ");
+	}
+	
+	// Requirement header
+	function scopepreCoreOption(cnfid,$sel) {
+		return function() {
+			var cnKey=$sel.val();
+			UU.caseChangeCoreOption(cnfid,cnKey);
+		}
+	}
+	
+	var pendingSelection=wildcardDefaultNoSelection&&!cnf.studentSelected&&cnf.options&&!cnf.enr&&!cnf.waiting&&!cnf.cart;
+	
+	var showRequirementHeader = !!cnf.reqId && (cnf.options.length || cnf.reqId.indexOf('@')>=0||cnf.reqId.indexOf("||")>=0||cnf.reqId.indexOf("..")>=0);
+	if (showRequirementHeader) {
+		$clone.find(".rbox-header").show();
+		$clone.addClass("rbox-has-reqid");
+		if (!lastInReq) {
+			$clone.addClass("not_last");
+		}
+		var wc = parseWildcard(cnf.reqId);
+		var wcD = wildcardsToDesc(wc,BB.activeState.term);
+		
+		function reqTitleDisp(arr) {
+			if (arr==null) return "Any";
+			return arr.join(",");
+		}
+		
+		if (wcD==null) {
+			$clone.find(".requirementTitle1").addClass("wildcard-title-big").text("Various Options").attr("title",cnf.reqId);
+		} else if (wcD.title) {
+			var title = wcD.title.startsWith(":")?wcD.title.substr(1):wcD.title;
+			$clone.find(".requirementTitle1").addClass("wildcard-title-big").text(title);
+		} else if (wcD.codesD) {
+			$clone.find(".requirementTitle1").html("<span class='rbox-wc-header'>Subject:</span> "+reqTitleDisp(wcD.codesD));
+			$clone.find(".requirementTitle2").show().html("<span class='rbox-wc-header'>Number:</span> "+reqTitleDisp(wcD.numsD));
+			$clone.find(".requirementTitle3").show().html("<span class='rbox-wc-header'>"+i8n.core+":</span> "+reqTitleDisp(wcD.attrsD));
+		}
+		
+		if (cnf.options) {
+			var $os=$clone.find(".optionsSelect");
+			
+			// Compare gcams with instAndTitle
+			var voptions=filterOptions(cnf.options,gcams,cnf.cnKey)
+			
+			var h="<select class='coreSelect"+cnf.cnfid+" reqIdCourse' onkeydown='return avoidChange(event);' onkeypress='return avoidChange(event);' onkeyup='return avoidChange(event);'";
+			if(oneShotEnrollment && hasEnrolledCourse()){
+				h+=" disabled> ";
+			}else{
+				h+=">";
+			}
+			h+="    <option disabled selected value> -- Select a course -- </option>"
+
+			for (var i=0;i<voptions.length;i++) {
+				var op=voptions[i];
+				h+="<option value='"+op.cnKey+"'";
+				if (cnf.cnKey==op.cnKey && !pendingSelection) h+=" selected='selected'";
+				h+=">"+op.cnKey+" - "+(op.fTitles?op.fTitles:op.title)+"</option>";
+			}
+			
+			h+="</select>"
+			$os.html(h).show();
+			var $sel=$os.find("select");
+			$sel.change(scopepreCoreOption(cnf.cnfid,$sel));
+			
+			if($sel[0].value == '') {
+				cnf.ignore=true;
+			} else {
+				cnf.ignore=false;
+			}
+		}
+	}
+	
+	$clone.find(".requirementHeader").toggle(showRequirementHeader);
+	
+	
+	
+	// Fill in values
+	$clone.toggleClass('hide-course', cnf.hide);
+	$clone.find('.cbox-margin').toggle(!pendingSelection);
+	$clone.find('.cbox-select-wildcard').toggle(!!pendingSelection);	
+	
+	var $cd=$clone.find(".cbox-cn");
+	$cd.html(cn.code+"<br/>"+cn.number);
+	$clone.find(".cbox-title").text(cn.title);
+	$clone.find(".cnf_specific_option").html("Try specific classes ("+tots.tselsFPaS+"/"+tots.tselsPUT+")");
+	
+	// Color
+	{
+		if (!isNew) {
+			var old=$cd.data("colorId");
+			$cd.removeClass("bc"+old);
+			$clone.find(".cbox").removeClass("bd"+old);
+		}
+		var col=(cnf.drop.indexOf("dp_")==0||cnf.ignore)?0:cnf.color;
+		$cd.data("colorId",col);
+		$cd.addClass("bc"+col);
+		$clone.find(".cbox").addClass("bd"+col);
+	}
+
+	
+	// TODO replace warning(s) if all are full?
+	
+	// Cores (May not be used by anyone?)
+	var cText="";
+	for (var ci=0;ci<cn.cores.length;ci++) {
+		if (cn.cores[ci].length<=0) continue;
+		if (cText.length>0) cText+=", ";
+		cText+=cn.cores[ci];//+" "+i8n.core;
+	}
+	$clone.find(".core_names_cont2").toggle(!hideAttrsInCourse && cText.length>0);
+	$clone.find(".core_names").html(cText);
+
+	{
+		var s="";
+		var waitlistedToolTip="";
+		if (cnf.enr) {
+			s=i8n.enrolled;
+			if (cnf.waiting) {
+				s=i8n.waitlisted;
+				if (cnf.waitPos) {
+					s+=" - Pos: "+cnf.waitPos;
+					waitlistedToolTip = "You are number "+cnf.waitPos+" in line";
+				}
+			}
+			if (cnf.audited) {
+				s=i8n.audited;
+			}
+		}
+		if (cnf.cart) {
+			if (s.length>0) s+=" &amp; ";
+			s+=i8n.inShoppingCart;
+		}
+		if(waitlistedToolTip.length > 0){
+			$clone.find(".course_state").attr("title", waitlistedToolTip);
+		}
+		var span = $clone.find(".course_state");
+		if(s == "" && oneShotEnrollment && hasEnrolledCourse()){
+			s=i8n.notEnrolled;
+			span.removeClass("course_state");
+			span.addClass("course_not_enrolled_state");
+		} 
+		span.html(s).toggle(s.length>0);
+		
+		if (showLowCostTextbookLabel && cnf.cnPro.hasCourseAttrValue("ZTC")) {
+			$clone.find(".course_state").html("ZTC").toggle(true).prop('title', "Zero Cost Textbook");
+		}
+
+		if (showLowCostTextbookLabel && cnf.cnPro.hasCourseAttrValue("LTC")) {
+			$clone.find(".course_state").html("LTC").toggle(true).prop('title', "Low Cost Textbook");
+		}
+
+	}
+	
+	if(displayStudentSectionAuthorization){
+		var usels = cnf.cnPro.cn.usels;
+		var auth = "";
+		for(var i = 0; i < usels.length; i++) {
+			var sels = usels[i].sels;
+			for(var j = 0; j < sels.length; j++){
+				if(sels[j].isApproved && sels[j].isApproved.toUpperCase() == "TRUE"){
+					auth = i8n.authorized;
+					break;
+				}
+			}
+			if(auth.length>0){
+				break;
+			}
+		}
+		$clone.find(".course_auth").html(auth).toggle(auth.length>0);
+	}
+	
+
+	$clone.find(".cnf_req_state").html(cnf.lock?i8n.required:i8n.recommended).toggle(cnf.isrec);
+	
+	// Requirements
+	var reqGs=cnPro.reqGs;
+	var $cr=$clone.find(".cnf_reqs");
+	if (reqGs.length==0 || hideCourseReqInCriteria) {
+		$cr.hide();
+	} else {
+		$cr.show();
+		$cr.find(".cnf_req").remove();
+		
+		var reqHtml=reqGs.describeIt("<span class='cbox-desc-title'>(for {}):</span> ","<span class='cbox-row-content cnf_req'>{}</span>",". "," and ",true,"others");
+		$cr.append("<span class='cbox-row-content cnf_req'>"+reqHtml+"</span> ");
+		
+		if (reqHtml.length==0) {
+			$cr.addClass("no_reqs");
+			$cr.hide();
+		} else if (reqGs.isNone()) {
+			$cr.addClass("no_reqs");
+		} else {
+			$cr.removeClass("no_reqs");
+		}
+		cnPro.reqGsVariations=reqGs.nbVariations();
+	}
+	
+	// Course Attributes (Course-level)
+	var ah=prepAttributes(cnPro.cattrs);
+	$clone.find(".cnf_cattrs").toggle(ah.length>0&&!hideAttrsInCourse);
+	$clone.find(".cnf_cattr").html(ah);
+	
+	// Course Attributes (Class-level)
+	// (Never shown)
+
+	// Extended Attributes
+	var aht="";
+	for (var title in cnPro.eattrsCD) {
+		var cd=cnPro.eattrsCD[title];
+		
+		aht+="<div class='cbox-row clearfix2 cnf_attrs'>";
+		aht+="<span class='cbox-row-title'>"+title+(title.length>0?":":"")+"</span>";
+		aht+=cd.describeIt("<span class='cbox-desc-title'>{}:</span> ","<span title=\"[]\">{}</span>",". ",", ",true);
+		aht+="</div>";
+	}
+	$clone.find(".cnf_custom_attrs").html(aht).toggle(aht.length>0);
+	
+	// Cross Listed Courses
+	$clone.find(".cnf_cross_listed").toggle(cn.cldesc.length>0);
+	$clone.find(".cnf_cross_listed_desc").html(cn.cldesc);
+	
+	// Course Description
+	$clone.find(".cnf_desc").toggle(cn.desc.length>0);
+	var descText=cn.desc;
+	// Replace terms as configured.
+	for (var i=0;i<descReplacements.length-1;i+=2) {
+		descText=descText.replace(descReplacements[i],descReplacements[i+1]);
+	}	
+	$clone.find(".cnf_desc_desc").html(descText);
+	
+	// Subject Note
+	$clone.find(".cnf_subj_note").toggle(cn.snote.length>0);
+	$clone.find(".cnf_subj_note_desc").html(cn.snote);
+	
+	// Class Notes / Remarks
+	var nh=cnPro.notes.describeIt("<span class='cbox-desc-title'>{}:</span> ","{}","<br/>",", ",true,"Others",true);
+	$clone.find(".cnf_class_notes").toggle(nh.length>0);
+	$clone.find(".cnf_class_notes_desc").html(nh).toggleClass("use_new_line",cnPro.notes.nbVariations()>1);
+
+	// Periods dropdown
+	{
+		var $sp=$clone.find(".select_period");
+		var nb=0;
+		var h="";
+		var hasNone=false;
+		for (var pn in cnPro.pns) {
+			if (pn=="") {
+				hasNone=true;
+				h+="<option value='none'>"+i8n.noPeriod+"</option>";
+			} else {
+				var pns=pn.split("-");
+				var pdesc="";
+				if (pns.length==2) {
+					pdesc=MM.terms[pns[0]]+" - "+MM.sessions[pns[1]];
+				} else {
+					pdesc=MM.sessions[pns[0]];	
+				}
+				if (!pdesc) {
+					pdesc=pn;
+				}
+				h+="<option value='"+pn+"'>"+i8n.s("periodDrop",pdesc)+"</option>";
+			}
+			nb++;
+		}
+		var more=showPeriodIfOne?0:1
+		if (!enablePeriodDropdown || nb<=(0+more) || (nb<=(1+more) && hasNone)) {
+			$sp.parent().hide();
+		} else {
+			$sp.parent().show();
+			h="<option value=''>"+i8n.allPeriods+" ("+nb+")</option>"+h;
+			$sp.html(h).val(cnf.cpn).prop("disabled",cnf.lockdrop ||isBlockCourse());
+			$sp.off().change(function() {
+				UU.caseChangePeriod(cnf,$(this).val());
+			});
+		}
+	}
+	
+	// Sections dropdown
+	{
+		var $sn=$clone.find(".select_usn");
+		var sns=[];
+		for (var sn in cnPro.sns) {
+			sns.push(sn);
+		}
+		sns.sort();
+
+		var h="";
+		var nb=0;
+		var hasNone=false;
+		for (var i=0;i<sns.length;i++) {
+			var sn=sns[i];
+			if (sn=="") {
+				hasNone=true;
+				sn="&lt;None&gt;"
+			}
+			h+="<option value='"+sn+"'>Section "+sn+"</option>";
+			nb++;
+		}
+
+		if (nb==0 || (nb<=1 && hasNone)) {
+			$sn.parent().remove();
+		} else {
+			h="<option value=''>"+i8n.allThe+" Sections ("+nb+")</option>"+h;
+			$sn.html(h).val(cnf.csn).prop("disabled",cnf.lockdrop);;
+			$sn.off().change(function() {
+				UU.caseChangeSection(cnf,$(this).val());
+			});
+		}
+	}
+	
+	
+	
+	// Update all Dropdown options
+	var currDropVal=$clone.find("select.dropdownSelect").val();
+	var $allOption=$clone.find("select.dropdownSelect option[value='al']");
+
+	if (tots.tselsPUT>1) {
+		$allOption.html(i8n.tryAllClasses+ " ("+tots.tselsPUT+")");
+	} else if (tots.tselsPUT==1) {
+		$allOption.html(i8n.tryOnlyClass);
+	} else {
+		$allOption.html(i8n.noApplicableClasses);
+	}
+
+	if (cnf.enr.length>0 || cnf.cart.length>0) {
+		$clone.find("select.dropdownSelect option[value^='kp_']").remove();
+		$clone.find("select.dropdownSelect option[value^='dp_']").remove();
+		for (var i=0; i<cn.usels.length; i++) {
+			var usel=cn.usels[i];
+			for (var j=0; j<usel.sels.length; j++) {
+				var sel=usel.sels[j];
+				if (sel.key==cnf.enr) {
+					$allOption.before("<option value=\"kp_"+sel.key+"\">"+(cnf.waiting?i8n.stayWaitlistedIn:i8n.stayEnrolledIn)+" "+sel.disp+"</option>")
+					if (!disableTrashButton && (!sel.hue || !hideDropOfHue)) {
+						$allOption.before("<option value=\"dp_"+sel.key+"\">"+i8n.dropCourse+"</option>")
+					}
+				}
+				else if (sel.key==cnf.cart) {
+					$allOption.before("<option value=\"kp_"+sel.key+"\">"+sel.disp+" ("+i8n.inShoppingCartL+")</option>")
+				}
+			}
+		}
+		if (currDropVal.indexOf("kp_")==0 || currDropVal.indexOf("dp_")==0) {
+			$clone.find("select.dropdownSelect").val(currDropVal);
+		}
+	}
+
+	if (showOnlineDropdown) {
+		// We have to do it this way because display:none doesn't work for options in IE.
+
+		//var allNoTry=$allOption.html().replace("Try","").trim();
+		//allNoTry=allNoTry.charAt(0).toUpperCase()+allNoTry.slice(1);
+		//$allOption.html(allNoTry); // KCTCS - for consistency with others
+
+		// Apply Filter-sensitive items
+		var ots=cnPro.ots;
+
+		//{
+		//	var $o=$clone.find("select.dropdownSelect option[value='ld']");
+		//	if (!ots["ld"] || countProperties(ots)<=1) {
+		//		$o.remove();
+		//	} else{
+		//		if ($o.length<1) {
+		//			$allOption.after("<option value=\"ld\">"+i8n.learnOndemanClassesOnly+"</option>");
+		//		}
+		//	}
+		//}
+
+		{
+			var $o=$clone.find("select.dropdownSelect option[value='oo']");
+			if (!ots["o"] || countProperties(ots)<=1) {
+				$o.remove();
+			} else{
+				if ($o.length<1) {
+					$allOption.after("<option value=\"oo\">"+i8n.onlineClassesOnly+" ("+ots["o"]+")</option>");
+				}
+			}
+		}
+
+		{
+			var $o=$clone.find("select.dropdownSelect option[value='oc']");
+			if (!ots["c"] || countProperties(ots)<=1) {
+				$o.remove();
+			} else{
+				if ($o.length<1) {
+					$allOption.after("<option value=\"oc\">"+i8n.onCampusClassesOnly+" ("+ots["c"]+")</option>");
+				}
+			}
+		}
+	}
+
+	// Update display of selections in the drop-down
+	var $after=$clone.find("select.dropdownSelect option[value='ss']");
+	var onlyOne=false;
+	if ($after.length==0 && cnf.drop.indexOf("us_")==0) {
+		// hideSpecificSectionSelection is true, so work around it
+		// when a specific selection is still chosen.
+		$after=$allOption;
+		onlyOne=true;
+	}
+
+	if ($after.length>0) {
+		for (var i=0; i<cnPro.uselPros.length; i++) {
+			var uselPro=cnPro.uselPros[i];
+
+			var selkey=uselPro.usel.sels[0].key; // default
+			var auth=uselPro.usel.sels[0].classes[0].isAuthorized;
+
+			var onlyOneSuccess=false;
+			var subName=""; // Useful if user adds CRN for non-selected campus
+			var sel=uselPro.usel.isKeyMatch(cnf.drop.substr(3));
+			if (sel!=null) {
+				//course.drop="us_"+usel.key;
+				// Change select dropdown to use sel key instead of usel key
+				selkey=cnf.drop.substr(3);
+				if (onlyOne) {
+					onlyOneSuccess=true;
+					subName=sel.disp;
+				}
+			}
+
+			if ((!onlyOne && uselPro.filterPass) || onlyOneSuccess) {
+				var name=uselPro.disp;
+				if (name=="") {
+					name=subName;
+				} else if (uselPro.allFilterPassFull) {
+					if (uselPro.waits>0) {
+						name+=" ("+i8n.waitlistable+")";
+					} else {
+						name+=" ("+i8n.fullClosed+")";
+					}
+				}
+				//If Section is Authorized for user append Authorized text.
+				if(auth && auth.toUpperCase() == "TRUE") {
+					name+="("+i8n.authorized+")";
+				}
+				
+				// Make sure usel is in dropdown
+				var $op=null;
+				for (var p=0;p<uselPro.usel.sels.length;p++) {
+					var selkeyT=uselPro.usel.sels[p].key;
+					var $opT=$clone.find("select.dropdownSelect option[value='us_"+selkeyT+"']");
+					if ($opT.length>=1) {
+						$op=$opT;
+						break;
+					}
+				}
+
+				if ($op==null) {
+					// Not there. Add it after the item already found.
+					$after.after("<option value=\"us_"+selkey+"\">"+name+"</option>");
+					$after=$after.next();
+				} else {
+					// There. Make sure the name is up to date because campus filter may change it.
+					if ($op.html()!=name) {
+						$op.html(name);
+					}
+					// Make sure future items are added after it.
+					$after=$op;
+				}
+			} else {
+				// Make sure it's not there
+				$clone.find("select.dropdownSelect option[value='us_"+selkey+"']").remove();
+			}
+		}
+	}
+	
+	
+	
+	
+	// Campuses as checkboxes
+	{
+		var s="";
+		var i=0;
+		var enCams=0;
+		for (var c in cnPro.cams) {
+			if (c.length<1) continue;
+			var desc=getCampusDesc(c);
+			var cid="cam_"+i+"_"+rand;
+			s+="<span class='cbox-selitem'>";
+			s+="<label class='mdl-checkbox mdl-js-checkbox mdl-js-ripple-effect cbox-checkbox' for='"+cid+"'>";
+			s+="<input type='checkbox' data-cam=\""+c+"\" id='"+cid+"' class='mdl-checkbox__input cnf_cam_chk'";
+			var inGlobal=(c in gcams);
+			if (((c in cnf.ca) || inGlobal) && !(cnf.cr && c in cnf.cr) ) {
+				s+=" checked=\"checked\"";
+			}
+			enCams++;
+			s+="/>";
+			s+="<span class='cbox-selitem-label'>";
+			s+=desc;
+			s+="</span>";
+			s+="</label>";
+			s+="</span>";
+			i++;
+		}
+		var $cc=$clone.find(".campus_checkboxes");
+		$cc.html(s);
+		$cc.parent().toggle(i>0 && !hideCnfCheckboxes);
+		$clone.find(".cnf_campuses_allnone").toggle(enCams>=2);
+	}
+	$clone.find(".cnf_cam_chk").change(function(ev) {
+		if ($(this).prop("disabled")) return;
+		var cam = $(this).data("cam");
+		var pos = $(this).is(":checked");
+		UU.caseChangeCampusAmmend(cnf,cam,pos);
+	});
+	
+	// Class modes types:
+	$clone.find(".cnf_modes").toggle(false); // showOnlineDropdown - not using this method now
+	
+	// Classes as checkboxes
+	var asels=new Array();
+	var cfsi=0;
+	for (var i=0; i<cnPro.uselPros.length; i++) {
+		var uselPro=cnPro.uselPros[i];
+		for (var seli=0; seli<uselPro.selPros.length; seli++) {
+			var selPro=uselPro.selPros[seli];
+			if (selPro.filterPass) {
+				selPro.cfsi=cfsi;
+				asels.push(selPro);
+			}
+			cfsi++;
+		}
+	}
+	// Sort alphabetically
+	asels.sort(function(a,b){
+		if (a.sel.usn>b.sel.usn) {
+			return 1;
+		} else if (a.sel.usn<b.sel.usn) {
+			return -1;
+		} else if (a.sel.disp>b.sel.disp) {
+			return 1;
+		} else if (a.sel.disp<b.sel.disp) {
+			return -1;
+		}
+	});
+	var s="";
+	var spMap={};
+	var bigId=null;
+	var enAsels=0;
+	for (var aseli=0; aseli<asels.length; aseli++) {
+		var selPro=asels[aseli];
+		var cfsi=selPro.cfsi;
+		spMap[cfsi]=selPro;
+		var labId=cfsi+"-"+rand;
+		if (aseli==50) {
+			bigId=labId;
+			s+="<a class='spec_sec show"+bigId+"' style='margin-right:10px' href='javascript:void(0)' onclick=\"$('.big"+bigId+"').slideDown();$('.show"+bigId+"').hide();\">... Show All "+asels.length+"</a><span class='big"+bigId+"' style='display:none'>";
+		}
+		
+		// Fade classes not being considered
+		var selIsPinned=selPro.isPinned();
+		var faded=(cnf.isPinned()&&!selIsPinned)||(cnf.drop!="ss"&&!selPro.included);
+		
+		s+="<span class='cbox-selitem cbox-classitem"+(faded?" cbox-faded":"")+"'>";
+		s+="<label class='mdl-checkbox mdl-js-checkbox mdl-js-ripple-effect cbox-checkbox' for='"+labId+"'>";
+		s+="<input type='checkbox' data-cfsi='"+cfsi+"' id='"+labId+"' class='mdl-checkbox__input class_chk'"+(selPro.selected?" checked":"");
+		if (cnf.lockdrop || ((oneShotEnrollment || coursesLocked.includes(cnf.cnKey)) && hasEnrolledCourse()) ) {
+			s+=" disabled='disabled'";
+		} else {
+			enAsels++;
+		}
+		s+=">";
+		s+="<span class='cbox-selitem-label'>";
+		
+		var sel=selPro.sel;
+		var toD=sel.disp;
+		if (sel.usn!=null && sel.usn.length>0) {
+			if (sel.disp.indexOf(i8n.period+" ")>=0 && sel.disp.indexOf(":")>=0) {
+				toD=sel.disp.replace(":",": Section "+sel.usn+":");
+			} else {
+				toD="Section "+sel.usn+": ";
+			}
+		}
+		s+=toD;
+		
+		if (selPro.sel.online) {
+			s+=" <i class=\""+onlineClassIcon+"\" title=\""+i8n.calssIsOnline+"\"/>";
+		}
+
+		if (sel.full) {
+			if (sel.waits>0) {
+				s+="<span style=\"color:#CE7900\"> ("+i8n.waitlistable+")</span>";
+			} else {
+				s+="<span style=\"color:#CC0000\"> ("+i8n.fullClosed+")</span>";
+			}
+		}
+
+		// Enrollment status
+		var es="";
+		var waitlistedToolTip = "";
+		if (sel.key==cnf.enr) {
+			es=i8n.enrolled;
+			if (cnf.waiting) {
+				es=i8n.waitlisted;
+				if (cnf.waitPos) {
+					es+=" - Pos: "+cnf.waitPos;
+					waitlistedToolTip = "You are number "+cnf.waitPos+" in line";
+				}
+			}
+			if (cnf.audited) {
+				es=i8n.audited;
+			}
+		}
+		if (sel.key==cnf.cart) {
+			if (es.length>0) es+=" &amp; ";
+			es=i8n.inShoppingCart;
+		}
+		if (es.length>0) {
+			s += "<span class='course_state' title='"+waitlistedToolTip+"'>"+es+"</span>";
+		}
+		
+		if (showLowCostTextbookLabel && selPro.hasClassAttrValue("ZTC")) {
+			s += "<span class='course_state' title='Zero Cost Textbook'>ZTC</span>";
+		}
+		
+		if (showLowCostTextbookLabel && selPro.hasClassAttrValue("LTC")) {
+			s += "<span class='course_state' title='Low Cost Textbook'>LTC</span>";
+		}
+
+		var cls="class";
+		if (uselPro.selPros.length>1) {
+			cls="classes at this meeting time";
+		}
+		
+		var lab;
+		if (selIsPinned) {
+			lab="Unpin "+cls;
+		} else {
+			lab="Pin down "+cls+(cnf.isPinned()?" instead":"");
+		}
+		
+		// Pinned status
+		s+="</span>";
+		s+="</label>";
+		s+="<div class='cbox-hover-pin' title='"+lab+"'>"+(selIsPinned?"-":"+")+"</div>";
+		s+="</span>";
+		
+	}
+
+	if (bigId!=null) {
+		s+="<a class='spec_sec hide"+bigId+"' style='margin-right:10px' href='javascript:void(0)' onclick=\"$('.big"+bigId+"').slideUp();$('.show"+bigId+"').show();\">Show Less</a><br/></span>";
+	}
+	
+	function updateExpandTip() {
+		var open = $clone.find(".cbox").hasClass("expanded");
+		$clone.find(".cnf_tip_expand").text(i8n.s("{} detail on {}",(open?"Collapse":"Expand"),(cn.code+" "+cn.number)));
+	}
+	updateExpandTip();
+
+	// Only show "Select All / Select None" if there are more than 1 items to select from
+	$clone.find(".cnf_classes").toggle(asels.length>0);
+	$clone.find(".cnf_classes").find(".cbox-allnone").toggle(enAsels>=2);
+	var $cb=$clone.find(".class_checkboxes");
+	$cb.empty();
+	$cb.append(s);
+	if(isBlockCourse()) {
+		$cb.parent().hide();
+	}
+	
+	function isBlockCourse() {
+		if(coursesToHideFromSelect!='') {
+			var blockCourses = coursesToHideFromSelect.split(',');
+			return blockCourses.includes(cnf.cnKey);
+		}
+		return false;
+	}
+	
+	$cb.find(".class_chk").off().click(function(ev) {
+		var $t=$(ev.target);
+		var cfsi=$t.data("cfsi");
+		domChecksToCodeNumberFilter();
+	});
+
+	// Apply time highlight functions to each checkbox
+	$cb.find("label").each(function() {
+		var cfsi=$(this).find(".class_chk").data("cfsi");
+		$(this).on("mouseover",scopepreserveSel(cfsi,true));
+		$(this).on("mouseout",scopepreserveSel(cfsi,false));
+	})
+	
+	// General Events 
+	$clone.find(".selectAll").off().click(function (ev) {
+		var $cont=$(this).parents(".selectAllNoneContainer");
+		selectAllNone(true,$cont);
+		return false;
+	});
+	$clone.find(".selectNone").off().click(function (ev) {
+		var $cont=$(this).parents(".selectAllNoneContainer");
+		selectAllNone(false,$cont);
+		return false;
+	});
+	
+	$clone.find(".cbox-classitem").off().mouseenter(function() {
+		if (!cnf.lockdrop) {
+			$(this).find(".cbox-hover-pin").show();
+		}
+		if((oneShotEnrollment || coursesLocked.includes(cnf.cnKey)) && hasEnrolledCourse()){
+			$(this).find(".cbox-hover-pin").hide();
+		}
+	}).mouseleave(function() {
+		$(this).find(".cbox-hover-pin").hide();
+	});
+	$clone.find(".cbox-hover-pin").each(function() {
+		var cfsi=$(this).parent().find(".class_chk").data("cfsi");
+		$(this).off().click(scopepreserveSelForPin(cfsi,true));
+	});
+	
+	$clone.find(".cbox-expand-region").off().click(function() {
+		expandRegion();
+	});
+
+	if(displayCourseRegisterLink){
+		var registerMsg = "Enroll Course";
+		$clone.find(".cnf_register_tip").text(registerMsg);
+		$clone.find(".course_register_btn").html(i8n.register);
+		
+		$clone.find(".cnf_register_button").off().click(function() {
+			console.log("Register");
+			var cnf = UU.registerCourse($(this));
+		});
+	}
+	$clone.find(".cnf_trash_button").off().click(function() {
+		if(cnf.cart.length>0&&isAdvising) {
+			return;
+		}
+		UU.caseRemoveCourse($(this).parents('.requirementDiv2').data('cnfid'),true);	
+	});
+	$clone.find(".cnf_locker_button").off().click(function() {
+		UU.caseToggleCourseLock($(this).parents('.requirementDiv2').data('cnfid'));
+	});
+	
+	$clone.find(".dropdownSelect").off().change(function() {
+		if(displayCourseRegisterLink){
+			UU.showHideRegisterButton(cnf,$(this).val(), $(this));
+		}
+		UU.caseChangeDropdown(cnf,$(this).val());
+	});
+	
+	if (isNew) {
+		$(".requirementDiv2").eq(index).after($clone);
+		$clone.find(".inputCampusAmmendments").val(cnf.ca);
+	}
+
+	renderDropdown();
+	renderWarnings();
+	
+	if (isNew && !fastHide) {
+		$clone.slideDown(400);
+	} else {
+		$clone.show();
+	}
+	
+	renderDropdownWidth();
+	
+	RR.updateTooltips();
+	if(cnf.enr){
+		$(".cnf_register_button").hide();
+	}
+
+}

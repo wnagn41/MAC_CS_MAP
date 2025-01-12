@@ -1,0 +1,96 @@
+
+Courses in performed list:
+- COMPSCI 1DM3: Discrete Mathematics for Computer Science
+- COMPSCI 1JC3: Introduction to Computational Thinking
+- COMPSCI 1MD3: Introduction to Programming
+- COMPSCI 1XD3: Computer Science Practice and Experience: Introduction to Software Design Using Web Programming
+- COMPSCI 1XC3: Computer Science Practice and Experience: Development Basics
+- COMPSCI 2AC3: Automata and Computability
+- COMPSCI 2C03: Data Structures and Algorithms
+- COMPSCI 2DB3: Databases
+- COMPSCI 2GA3: Computer Architecture
+- COMPSCI 2LC3: Logical Reasoning for Computer Science
+- COMPSCI 2ME3: Introduction to Software Development
+- COMPSCI 2SD3: Concurrent Systems
+- COMPSCI 2XC3: Computer Science Practice and Experience: Algorithms and Software Design
+- COMPSCI 3AC3: Algorithms and Complexity
+- COMPSCI 3DM3: Introduction to Data Mining
+- COMPSCI 3DP3: Data Privacy
+- COMPSCI 3GC3: Computer Graphics
+- COMPSCI 3MI3: Principles Of Programming Languages
+- COMPSCI 3RA3: Software Requirements and Security Considerations
+- COMPSCI 3TB3: Syntax-Based Tools and Compilers
+- COMPSCI 3SH3: Computer Science Practice and Experience: Operating Systems
+- COMPSCI 4E03: Performance Analysis of Computer Systems
+- COMPSCI 4EN3: Software Entrepreneurship
+- COMPSCI 4HC3: Human Computer Interfaces
+- COMPSCI 4ML3: Introduction to Machine Learning
+- COMPSCI 4O03: Linear Optimization Algorithms
+- COMPSCI 4X03: Scientific Computation
+- COMPSCI 4Z03: Directed Readings
+- COMPSCI 3DM3: Introduction to Data Mining
+- COMPSCI 4AL3: Applications of Machine Learning
+- COMPSCI 4CR3: Applied Cryptography
+- COMPSCI 4SD3: Data-Driven Algorithms for Sequential Decision Making
+
+Courses not in performed list:
+- COMPSCI 3EA3: Software Specifications and Correctness
+- COMPSCI 3IS3: Information Security
+- COMPSCI 3N03: Computer Networks and Security
+- COMPSCI 4AD3: Advanced Databases
+- COMPSCI 4AR3: Software Architecture
+- COMPSCI 4DC3: Distributed Computing
+- COMPSCI 4F03: Parallel Computing
+- COMPSCI 4FP3: Functional Programming
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TH3: Theory of Computation
+- COMPSCI 4TI3: Fundamentals of Image Processing
+- COMPSCI 4WW3: Web Systems and Web Computing
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TH3: Theory of Computation
+- COMPSCI 4TI3: Fundamentals of Image Processing
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TH3: Theory of Computation
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TH3: Theory of Computation
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TH3: Theory of Computation
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TH3: Theory of Computation
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TH3: Theory of Computation
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TH3: Theory of Computation
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TH3: Theory of Computation
+- COMPSCI 4TI3: Fundamentals of Image Processing
+- COMPSCI 4WW3: Web Systems and Web Computing
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TH3: Theory of Computation
+- COMPSCI 4TI3: Fundamentals of Image Processing
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TH3: Theory of Computation
+- COMPSCI 4TI3: Fundamentals of Image Processing
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TH3: Theory of Computation
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TE3: Continuous Optimization Algorithms
+- COMPSCI 4TH3: Theory of Computation
+- COMPSCI 4TI3: Fundamentals of Image Processing
+- COMPSCI 4WW3: Web Systems and Web Computing
+- COMPSCI 4ZP6A/B: Computer Science Capstone Project
+- COMPSCI 6E03: Performance Analysis of Computer Systems (Theory)
+- COMPSCI 6F03: Distributed Computer Systems (Systems)
+- COMPSCI 6O03: Linear Optimization (Theory)
+- COMPSCI 6TE3: Continuous Optimization (Theory)
+- COMPSCI 6WW3: Web Systems and Web Computing (Systems)
+- COMPSCI 3VA3: Information Visualization and Visual Analytics
+- COMPSCI 4NL3: Natural Language Processing

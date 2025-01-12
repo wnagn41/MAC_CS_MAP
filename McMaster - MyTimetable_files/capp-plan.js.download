@@ -1,0 +1,340 @@
+var CP = (function() {
+	var my = {};
+	
+	my.usages={};
+
+	my.loadData = function() {
+		$.get('api/v2/capp-plan?term='+BB.activeState.term, {}, function(data) {
+			
+			$('#dwaudit-loading').hide();
+			
+			if (!data || data.length == 0) {
+				$('#dwaudit-empty').show();
+				return;
+			}
+			
+			$('#dwaudit-selection').hide();
+			$('#dwaudit-content').show();
+
+			$("#dw_degree").html(data.Degree.Description);
+			$("#dw_plan").html(data.PlanDescription);
+			$("#dw_school").html(data.School.Description);
+			
+			var notesHtml = "";
+			
+			if (data.Notes) {
+				data.Notes.forEach(function(item) {
+					if (!item.IsInternal) {
+						var text = item.Text.split(':');
+						notesHtml+='<div class="dw-field-item">';
+						notesHtml+='  <span class="dw-field-name">'+text[0]+'</span>';
+						notesHtml+='  <span class="dw-field-value" id="dw_degree">'+(text.length>1?text[1].trim():"")+'</span>';
+						notesHtml+='</div>';
+					}
+				})
+			}
+			
+			$('#tab_summary .dw-fieds').append(notesHtml);
+			
+			var groups = [];
+			
+			data.Years.forEach(function(y) {
+				groups = groups.concat(y.Terms.map(function(t){return t.Group}));
+			});
+			
+			my.usages={};
+			groups.forEach(function(b) {
+				// Count how many times each "Course/wildcard" is used
+				countUsages(b);
+			});
+			
+			groups.forEach(function(b) {
+				displayGroup($("#tab_audit"), b, true, false, 0);
+				displayGroup($("#tab_needed"), b, true, true, 0);
+			});
+			
+		})		
+		// Log an error if the request fails
+		.fail(function(data) {
+			$('#dwaudit-loading').hide();
+			$('#dwaudit-error').show();
+			console.error("Failed to obtain DW Audit Import data");
+		});
+	}
+	
+	var findCourse = function(course) {
+		for (var i=0;i<BB.activeState.cnfs.length;i++) {
+			var cnf=BB.activeState.cnfs[i];
+			if (cnf.cnKey === course || (cnf.reqId && cnf.reqId === course)) {
+				return cnf;
+			}
+		}
+		return null;
+	}
+
+	var displayGroup = function(tab, data, expand, filterCompleted, level) {
+		var historyComplete, historyProgress, historyTodo;
+		data.PlannedClasses.forEach(function(c) {
+			if (c.HistoricStatus === "COMPLETE") historyComplete = true;
+			if (c.HistoricStatus === "INPROGRESS") historyProgress = true;
+			if (c.HistoricStatus !== "INPROGRESS" && c.HistoricStatus !== "COMPLETE") historyTodo = true;
+		});
+		// Here
+		var completed;
+		var groupType = data.GroupType.Code;
+		
+		if (groupType === 'UN') {
+			completed = historyProgress?"INPROGRESS":historyTodo?"INCOMPLETE":"COMPLETE";
+		} else {
+			completed = historyProgress?"INPROGRESS":historyComplete?"COMPLETE":"INCOMPLETE";
+		}
+		
+		if (filterCompleted && completed === "COMPLETE") {
+			return;
+		}
+		
+		var choiceTitle = groupType === 'UN'? "all of" : "one of";
+		var title = data.SummaryDescription + "<span class='capp-title-choice'> (" + choiceTitle + ")</span>"
+		
+		displayClasses(tab, title, false, completed, level, false)
+		level += 1;
+		data.PlannedClasses.forEach(function(c) {
+			var title = c.CourseDiscipline + " " + c.CourseNumber;
+			if (filterCompleted && c.HistoricStatus === "COMPLETE") return;
+			vaMap[(c.CourseDiscipline + "-" + c.CourseNumber).replace(":","..")] = c.validation.replace(":","..");
+			displayClasses(tab, title, false, c.HistoricStatus, level, true)
+		});
+		
+		if (!data.Groups) {
+			return;
+		}
+		
+		data.Groups.forEach(function(g) {
+//				var isCompleted = !r.group.plannedClasses.some(function(c){
+//					c.historicStatus!="COMPLETE"
+//				});
+//				
+//				if (filterCompleted && isCompleted) {
+//					return;
+//				}
+				
+				var courseGroup = displayGroup(tab, g, false, g.Per_complete, level);
+				
+//				if (courseGroup && expand) {
+//					courseGroup.find(".dw-class-group-content").toggle(true);
+//					expand = false;
+//				}
+		});
+		
+	}
+	
+
+	var displayClasses = function(tab, title, expand, completed, level, selectable, removable){
+
+		title = title.replace(":", "..");
+
+		//var selection = BB.activeState.cnfs.map(function(cnf){
+		//	return cnf.cnKey;
+		//});
+		
+		var cloneGroup = $(".dp-group").first().clone();
+		cloneGroup.attr('data-level', level)
+		cloneGroup.css("padding-left", level * 20);
+		cloneGroup.find(".dp-class-title").html(title);
+		tab.append(cloneGroup);
+		cloneGroup.show();
+		
+		cloneGroup.find(".dw-check").toggle(completed === "COMPLETE");
+		cloneGroup.find(".dw-partial").toggle(completed === "INPROGRESS");
+		cloneGroup.find(".dw-uncheck").toggle(completed !== "COMPLETE" && completed !== "INPROGRESS");
+		
+		var course = title.replace(" ", "-");
+		var selected = findCourse(course)!=null;
+		var occurances = my.usages[course.replace("..",":")];
+		
+		cloneGroup.find(".dp-class-select").toggle(selectable && (!selected || occurances>1));
+		cloneGroup.find(".dp-class-remove").toggle(selectable && selected);
+		cloneGroup.find(".dp-expand-toggle").toggle(!selectable);
+		
+		
+		cloneGroup.find(".dp-class-select").attr('data-course', course);
+		cloneGroup.find(".dp-class-remove").attr('data-course', course);
+		
+		return cloneGroup;
+	}
+	
+	var countUsages = function(rootGroup) {
+		var processGroup = function(group) {
+			for (var i=0;i<group.PlannedClasses.length;i++) {
+				var c=group.PlannedClasses[i];
+				var t=c.CourseDiscipline+"-"+c.CourseNumber;
+				if (!my.usages[t]) my.usages[t]=0;
+				my.usages[t]++;
+			}
+			if (group.Groups) {
+				for (var i=0;i<group.Groups.length;i++) {
+					var g=group.Groups[i];
+					processGroup(g);
+				}
+			}
+		}
+		processGroup(rootGroup);
+	}
+	
+	my.showPopup = function() {
+		$.get('capp-plan.jsp', {term:BB.activeState.term}, function(html) {
+			// Buttons
+			var buttons = [
+				{
+					name: "Close",
+					action: function() { }
+				}
+			];
+			
+			// Show popup
+			RR.popNotice(html, buttons, function() {}, i8n.importCappPlanTitle, true, i8n.cappDisclaimer);
+			my.loadData();
+		})
+		// Log an error if the request fails
+		.fail(function(data) {
+			console.error("Failed to obtain DW Audit Import content");
+		});
+	}
+	
+	my.toggle = function(item) {
+		var fieldSet = $(item).find('fieldset');
+		fieldSet.slideToggle("slow");
+	}
+	
+	my.remove = function(item, event) {
+		var course = item.getAttribute('data-course');
+		var occurances = my.usages[course.replace("..",":")];
+		
+		console.log("Removing course '" + course + "'");
+		
+		var lengthBefore = BB.activeState.cnfs.length;
+
+		var cnf=findCourse(course);
+		if (cnf) {
+			UU.caseRemoveCourse(cnf.cnfid);
+		}
+
+		var lengthAfter = BB.activeState.cnfs.length;
+		var removed = lengthAfter < lengthBefore; 
+
+		$(item).siblings('.capp-course-status').remove();
+		
+		var successDiv = $('<span role="alert" class="capp-course-status"></span>');
+
+		if (removed) {
+			if (occurances<=1 || findCourse(course)==null) {
+				$(item).hide();
+			}
+			$(item).siblings(".dp-class-select").show();
+			successDiv.addClass('dw-select-success');
+			successDiv.append("Removed " + course);
+		} else {
+			successDiv.addClass('dw-select-error');
+			successDiv.append("Failed to remove " + course);
+		}
+		
+		successDiv.insertBefore($(item));
+		
+		setTimeout(function(){
+			successDiv.fadeOut(function(){
+				successDiv.remove();
+			});
+		}, 4000);
+	}
+	
+	my.add = function(item, event) {
+		$(item).prop('disabled', true);
+		$(item).html('Selecting...');
+		var course = item.getAttribute('data-course');
+		console.log("Adding course '" + course + "'");
+
+		if (course.indexOf('@') >= 0 && course.split(' ').length == 2) {
+			course += " @";
+		}
+		
+		var lengthBefore = BB.activeState.cnfs.length;
+		
+		UU.caseAddCourses(course, function(){
+			var lengthAfter = BB.activeState.cnfs.length;
+			var added = lengthAfter > lengthBefore; 
+			
+			var course = item.getAttribute('data-course');
+			
+			if (added) {
+				var occurances = my.usages[course.replace("..",":")];
+				
+				if (occurances<=1) {
+					$(item).hide();
+				}
+				$(item).siblings(".dp-class-remove").show();
+				$(item).prop('disabled', false);
+				
+				
+				$(item).siblings('.capp-course-status').remove();
+				
+				var successDiv = $('<span role="alert" class="capp-course-status"></span>');
+				successDiv.addClass('dp-select-success')
+				successDiv.append("Selected " + course);
+				successDiv.insertBefore($(item));
+				
+				setTimeout(function(){
+					successDiv.fadeOut(function(){
+						successDiv.remove();
+					});
+				}, 4000);
+			} else {
+				var error = "Could not add course '" + course + "'"; 
+				
+				$('.warningNoteBad').each(function (){
+					var msg = $(this).html(); 
+					if (msg.toLowerCase().replace(/-/g, " ").indexOf(course.toLowerCase().replace(/-/g, " ")) > -1) {
+						error = msg;
+					}
+				});
+				
+				var errorDiv = $('<div role="alert"></div>');
+				errorDiv.addClass('dw-select-error')
+				errorDiv.append(error);
+				$(item).parent().parent().append(errorDiv);
+			}
+
+			$(item).html('Select');
+		},false,false,false,"",null,true);
+
+
+	}
+	
+	my.toggle = function(item) {
+		var currentLevel = $(item).attr("data-level");
+		var sibblings = $(item).nextAll();
+		$(item).find(".dp-expand-toggle").toggleClass("expanded");
+		
+		var expanded = $(item).find(".dp-expand-toggle").hasClass("expanded");
+		
+		for (var n=0; n<sibblings.length; n++){
+			var sibblingLevel = $(sibblings[n]).attr("data-level");
+			
+			
+			if (sibblingLevel === currentLevel) {
+				break;
+			}
+			
+			if (sibblingLevel > currentLevel) {
+				if (expanded) {
+					$(sibblings[n]).slideDown();
+					$(sibblings[n]).find(".dp-expand-toggle").addClass("expanded");
+				} else {
+					$(sibblings[n]).slideUp();					
+					$(sibblings[n]).find(".dp-expand-toggle").removeClass("expanded");
+				}
+			}
+		};
+	}
+	
+	return my;
+}());

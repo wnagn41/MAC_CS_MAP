@@ -1,0 +1,368 @@
+/**
+ * Prepare the popup window for course browsing.
+ */
+// Advanced Search
+var AS = (function() {
+	var my={};
+	
+	var cbLastPage=0;
+	var cbHasMore=false;
+	
+	my.openCourseBrowser = function() {
+		if (BB.activeState.term==null || BB.activeState.term=="0") {
+			var msg="<p>You must select a term first.</p>";
+			var buttons=[{name:"OK",action:function() {popupNotice.close();}}];
+			RR.popNotice(msg,buttons);
+			return;
+		}
+		
+		// Buttons
+		var buttons = [{
+			name: "Select Courses",
+			action: function() { cbAddSelectedCourses(); }
+		}, {
+			name: "Close"
+		}];
+			
+		cbInitDOM();
+		fillExtraSubjects();
+
+		RR.changeSelCourseTabToPopupIfWide('tab_search',buttons);
+		
+		updateButtonLabel();
+		// Set focus to first tab
+		setTimeout(function(){
+			$('.cb_filter_switch input').first().focus();
+			
+			$('.cb_filter_switch input').first().on('keydown', function(e) {
+				if (e.shiftKey && e.keyCode === 9) {
+					$('.popupNoticeButtons .big_button').last().focus();
+					return false;
+				}
+				
+			})
+		},100);
+		
+		// Move focus to first tab after focus leave 'close' button
+	    $('.popupNoticeButtons .big_button').last().on('keydown', function(e){
+			console.log("out")
+			if (!e.shiftKey && e.keyCode === 9) {
+				$('.cb_filter_switch input').first().focus();
+				return false;
+			}
+	    });
+
+	}
+	
+	function cbSearchCourses2AddPage() {
+		cbSearchCourses2(cbLastPage++);
+	}
+
+	var phrase=$('#cb_search_term').val();
+	if (phrase=="") phrase=" "; // empty is no results
+	
+	function updateButtonLabel() {
+		var count = $(".cb-search-option input[name='cb_search_result']:checked").length;
+		var btnText = 'Add ';
+		if(count == 0) {
+			btnText = 'Select Courses';
+			$('input.pbut0,#cbSelectCourses').attr("disabled",true);
+		} else {
+			$('input.pbut0,#cbSelectCourses').attr("disabled",false);
+		}
+		if (count == 1) {
+			btnText += 'Selected Course'; 
+		} else if (count > 1) {
+			btnText += (count + ' Selected Courses');
+		}
+		$('input.pbut0,#cbSelectCourses').attr('value', btnText);
+		$("#cbSelectCourses").off().click(function() {
+			cbAddSelectedCourses();
+			RR.changeSelCourseTab("tab_selected");
+		});
+	}
+	
+	function cbSearchCourses2(page) {
+		if (page === undefined) {
+			page=0;
+			cbHasMore=false;
+			cbLastPage=0;
+			$('#cb-results_table').html("");		
+		}
+
+		// Campuses selected
+		var cams = [];
+		$.each(BB.activeState.cams, function(campus, selected) {
+			if(selected) {
+				cams.push(campus);
+			}
+		});
+		
+		var classDays = [];
+		$('#cb_class_day_row input:checked').each(function() {
+			classDays.push($(this).val());
+		});
+		
+		var startTime = "";
+		if($('#cb_startHour').val() != ""){
+			startTime = $('#cb_startHour').val()+":"+$('#cb_startMin').val();
+		}
+		
+		var endTime = "";
+		if($('#cb_endHour').val() != ""){
+			endTime = $('#cb_endHour').val()+":"+$('#cb_endMin').val();
+		}
+		
+		var startDate=$("#cb_startDate").length==0?null:$("#cb_startDate").datepicker("getDate");
+		var endDate=$("#cb_endDate").length==0?null:$("#cb_endDate").datepicker("getDate");
+		
+		var classTime = {};
+		if(classDays.length != 0 ||  
+				$('#cb_startHour').val() != "" || $('#cb_startMonth').val() != "" ||
+				$('#cb_endHour').val() != "" || $('#cb_endMonth').val() != "") {
+			classTime = {	// See DayTimeFilter.java
+				classDays: classDays, 
+				startHour: $('#cb_startHour').val(),
+				startMin: $('#cb_startMin').val(),
+				endHour: $('#cb_endHour').val(),
+				endMin: $('#cb_endMin').val(),
+				
+				startYear: startDate?startDate.getFullYear():"",
+				startMonth: startDate?startDate.getMonth():"",
+				startDayOfMonth: startDate?startDate.getDate():"",
+				endYear: endDate?endDate.getFullYear():"",
+				endMonth: endDate?endDate.getMonth():"",
+				endDayOfMonth: endDate?endDate.getDate():""
+			};
+		}
+		
+		var phrase=$('#cb_search_term').val();
+		if (phrase=="") phrase=" "; // empty is no results
+		var cbInput = {
+				term: BB.activeState.term,
+				cams: cams.join('_'),
+				course_add: phrase,
+				page_num: page,
+				rd: $('#cb_requirement_designation').val(),
+				cav: $('#cb_course_attribute_value').val(),
+				s: $('#cb_session').val(),
+				ca: $('#cb_course_attribute').val(),
+				ag: $('#cb_academic_group').val(),
+				oo: ($('#cb_online_only').is(":checked")?"1":"0"),
+				oco: ($('#cb_oncampus_only').is(":checked")?"1":"0"),
+				oso: ($('#cb_open_seats_only').is(":checked")?"1":"0"),
+				sco: ($('#cb_selected_campuses_only').is(":checked")?"1":"0"),
+				ces: $('#cb_course_external_subject').val(),
+				ac: $('#cb_acad_career').val(),
+				sio: "1",
+				already: BB.activeState.codeNumbers(),
+				clsTime: (JSON.stringify(classTime) != '{}' ? JSON.stringify(classTime) : "")
+			};
+		
+		$.ajax({
+			cache: false,
+			url: "api/courses/suggestions",
+			data: cbInput,
+			dataType: "xml",
+		}).done(function(answer) {
+			var list=answer.getElementsByTagName("rs");
+			var h="";
+			for (var i=0;i<list.length;i++) {
+				var nb=1000*page+i;
+				var rsEl=list[i];
+				var info=rsEl.getAttribute("info");
+				var title=rsEl.textContent;
+				var carry=("true"==rsEl.getAttribute("carry"));
+				
+				if (title=="_more_") {
+					cbHasMore=true;
+					continue;
+				}
+				
+				h+="<tr class='cb-row'><td class='cb-search-option'>";
+				h+="<label for='cb-result-"+nb+"'>";
+				h+="<input id='cb-result-"+nb+"' type='checkbox' style='display:inline;' name='cb_search_result' value='"+title+"'>";
+				h+="</label>";
+				h+="</td>";
+				h+="<td class='cb-search-label'>";
+				h+="<label for='cb-result-"+nb+"'>";
+				h+="<span style='font-weight:bold; font-size:1.2em;'>";
+				h+=AutoSuggest.util.highLightText(title,phrase);
+				h+="</span><br/>";
+				h+="<span>"+AutoSuggest.util.highLightText(info,phrase)+"</span>";
+				h+="</label>";
+				h+="</td></tr>";
+			}
+			var mdlSwitch=$('#cb_show_selected_only_cbx').parent()[0];
+			mdlSwitch.MaterialSwitch.off();
+			if (page==0) {
+				if (list.length==0) {
+					h="<tr><td class='cb-no-results'>No Results Found</td></tr>";
+					mdlSwitch.MaterialSwitch.disable();
+				} else {
+					mdlSwitch.MaterialSwitch.enable();	
+				}
+				$('#cb-results_table').html(h);
+			} else {
+				$('.cb-row').last().after(h);
+			}
+			
+			// Selection handling
+			$('.cb-search-option :checkbox').each(function() {
+				$(this).off().change(function() {
+					// Highlight the row
+					var courseNumber = $(this).val();
+					var parentTR = $(this).closest('tr');
+					if (this.checked) {
+						parentTR.addClass('cb-search-selection');
+					} else {
+						parentTR.removeClass('cb-search-selection');
+					}
+					
+					// Select button labeling
+					updateButtonLabel();
+
+					var count = $(".cb-search-option input[name='cb_search_result']:checked").length;
+					$(".search-tab-footer .mdl-button").html("Select " + count + " Course" + (count>1?"s":""));
+					
+					$(".search-tab-footer .mdl-button").attr('disabled', count == 0);
+					
+				});
+			});
+			
+			$("#cb_search_results").off('scroll').on('scroll', function() {
+		        if($(this).scrollTop() + $(this).innerHeight() + 400 >= $(this)[0].scrollHeight) {
+		        	if (cbHasMore) {
+		        		cbHasMore=false;
+		        		cbSearchCourses2AddPage();
+		        	}
+		        }
+		    });
+			
+			updateButtonLabel();
+			
+		});
+	}
+	
+	function cbAddSelectedCourses() {
+		// Select the courses
+		var itemnames="";
+		$(".cb-search-option input[name='cb_search_result']:checked").each(function() {
+			if (itemnames.length>0) itemnames+=",";
+			itemnames+=$(this).val();
+		});
+		UU.caseAddCourse(itemnames);
+		
+	}
+	
+	
+	function cbInitDOM() {
+		
+		var shown=$("#campusSelector").data("nbChecked");
+		$("#miniCamsSelected").text("("+shown+")");
+		
+		// Fill in select values
+		writeObjectIntoSelect($("#cb_academic_group"),MM.termBundle[BB.activeState.term].academicgroups,true,true);
+	
+		var cas = MM.termBundle[BB.activeState.term].courseattributes;
+		var list = {};
+	
+		// Show attr codes?
+		var showCodes=false;
+		if ($("#cb_course_attribute_value").length==0) {
+			showCodes=true;
+		}
+	
+		for (var key in cas) {
+			list[key]=cas[key].description + (showCodes?(" ("+key+")"):"");
+		}
+		writeObjectIntoSelect($("#cb_course_attribute"),list,true,true);
+	
+		$("#cb_course_attribute").off().change(function() {
+			var attr=$("#cb_course_attribute").val();
+			var attrValues={};
+			if (attr.length>0) {
+				attrValues=MM.termBundle[BB.activeState.term].courseattributes[attr].values;
+			}
+			writeObjectIntoSelect($("#cb_course_attribute_value"),attrValues,true,true);
+		});
+		
+		
+		var rds=MM.termBundle[BB.activeState.term].requirementdesignations;
+		var count=writeObjectIntoSelect($("#cb_requirement_designation"),rds,true,true);
+		$("#cb_requirement_designation_row").toggle(count>0); // hide field if no requirements
+
+	
+		$("#cb_startDate").datepicker();
+		$("#cb_startDate").datepicker("option","dateFormat","d MM, yy");
+		$("#cb_endDate").datepicker();
+		$("#cb_endDate").datepicker("option","dateFormat","d MM, yy");
+	
+		// Search for courses
+		$('#course-browsing-search-btn').off().click(function() {
+			cbSearchCourses2();
+		});
+		
+		// Hiding and showing selections
+		$('#cb_show_selected_only_cbx').off().change(function() {
+			var showSelectedOnly = this.checked;
+			
+			// Table rows
+			$('table.cb-results_table tr').each(function() {
+				// Whether selected
+				var tableTR = $(this);
+				var hasSelectionCls = tableTR.hasClass("cb-search-selection");
+
+				// Only those that are not selected
+				if(!hasSelectionCls) {
+					if (showSelectedOnly) {
+						// Hide the row
+						tableTR.addClass('cb-search-result-hide');
+					} else {
+						// Unhide the row
+						tableTR.removeClass('cb-search-result-hide');
+					}
+				}
+			});
+		});
+		
+		$('#cb_selected_campuses_only').off().change(function() {
+			// redo this, because it affects campuses
+			fillExtraSubjects();
+		});
+	}
+	
+	function fillExtraSubjects() {
+		var sco=$('#cb_selected_campuses_only').is(":checked");
+
+		var cams="all";
+		if (sco) {
+			// Selected Campuses only
+			var cams2=[];
+			$.each(BB.activeState.cams, function(campus, selected) {
+				if(selected) {
+					cams2.push(campus);
+				}
+			});
+			var cams=cams2.join("_");
+		}
+		var term=BB.activeState.term;
+		
+		$.getJSON("api/v2/classextras/acadcareers",{term:term,cams:cams},function(data) {
+			var count=writeObjectIntoSelect($("#cb_acad_career"),data,true,true);
+			$("#cb_acad_career_row").toggle(count>0);
+		});
+		$.getJSON("api/v2/classextras/externalsubjects",{term:term,cams:cams},function(data) {
+			var count=writeObjectIntoSelect($("#cb_course_external_subject"),data,true,true);
+			$("#cb_course_external_subject_row").toggle(count>0);
+		});
+		$.getJSON("api/v2/classextras/sessions",{term:term,cams:cams},function(data) {
+			var count=writeObjectIntoSelect($("#cb_session"),data,true,true);
+			$("#cb_session_row").toggle(count>0);
+		});
+		
+	}
+	
+	return my;
+}());
+

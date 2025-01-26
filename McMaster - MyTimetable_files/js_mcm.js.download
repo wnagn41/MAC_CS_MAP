@@ -1,6 +1,0 @@
-/* Custom Javascript for MCM */
-
-function custExtraTipContents(){
-	var t="When selecting a 6-unit multi-term A/B course in the fall term through the shopping cart, make sure to block the same time in the winter term. This will help you plan for both fall and winter. Once you have ENROLLED in the fall term, your timetable will automatically display the B portion in the winter term."; 
-	return ["f",null,"Multi-Term Courses",t,t];
-}

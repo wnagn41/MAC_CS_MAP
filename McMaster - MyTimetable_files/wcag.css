@@ -1,0 +1,22 @@
+.wcga_contrast_1 {
+	background-color: #0B3C5D !important;
+}
+
+.noanimation * {
+    -webkit-animation: none !important;
+    -moz-animation: none !important;
+    -o-animation: none !important;
+    -ms-animation: none !important;
+    animation: none !important;
+}
+
+.zero_border_padding{
+	padding:0px; 
+	border-spacing:0px; 
+	border:0px;
+}
+
+.zero_padding_spacing{
+	padding: 0px;
+	border-spacing: 0px;
+}

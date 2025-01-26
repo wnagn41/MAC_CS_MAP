@@ -1,0 +1,373 @@
+.clearfix2::after {
+	content: "";
+	clear: both;
+	display: table;
+}
+
+/* Fix for MDL lite browser zooming */
+.mdl-checkbox.is-checked .mdl-checkbox__box-outline {
+    overflow: initial;
+}
+.mdl-checkbox__tick-outline {
+	width: 14px;
+    height: 14px;
+    top: -0.6px;
+    left: -1px;
+}
+
+.cbox-margin {
+	margin: 0px;
+}
+
+.cbox-toggle {
+	position: absolute;
+	padding: 19px 2px;
+}
+
+.cbox-faded .cbox-selitem-label {
+	opacity: 0.5;
+}
+.cbox-faded .mdl-checkbox {
+	opacity: 0.5;
+}
+
+.cbox {
+	box-shadow: 0 2px 2px 0 rgba(0, 0, 0, .14), 0 3px 1px -2px
+		rgba(0, 0, 0, .2), 0 1px 5px 0 rgba(0, 0, 0, .12);
+	border-radius: 4px;
+	box-sizing: border-box;
+	margin: 0 0 0 30px;
+	background-color: #ffffff;
+	border-width:0px; /*Positive to use cbox border for locking*/
+	border-style:solid;
+}
+
+.cbox-unlocked {
+	border-width:0px;
+}
+
+.cbox-cn {
+	/*background-color: #a5d6a7;*/
+	/*color: #4e4e4e;*/
+	text-align: center;
+	padding: 4px 10px;
+	font-size: 110%;
+	font-weight: 500;
+	border-top: 7px solid #ffffff;
+    border-bottom: 7px solid #ffffff;
+    min-width: 42px;
+}
+
+.cbox-header {
+	padding: 6px;
+	line-height: 130%;
+	max-width: 155px;
+}
+
+.cbox-title {
+	text-transform: uppercase;
+	font-weight: bold;
+	font-size: 105%;
+	margin-right: 6px;
+}
+
+.cbox-state {
+	font-size: 90%;
+	font-weight: 500;
+}
+
+.cbox-dropdown-cont-highlight {
+	background-color: rgba(50, 50, 50, 0.17);
+    padding: 0px 0px 0px 7px;
+    border-radius: 4px 4px 4px 4px;
+}
+
+.cnf_lock_shader {
+	background-color: rgba(50, 50, 50, 0.17);
+}
+.cbox button.mdl-button.cnf_locker_button {
+    font-size: 120%;
+    line-height: 31px;
+}
+
+.cbox-dropdown {
+	padding: 0px;
+    margin: -2px 0 -2px -4px;
+    border: 0;
+    background-color: #f1d871;
+    border: 1px solid transparent;
+}
+
+.cbox-dropdown-normal {
+	background-color: rgba(0,0,0,0);
+	transition: background-color 0.5s ease;
+}
+
+.cbox-warnings {
+	margin: 0 10px 0px 10px;
+	padding: 0 0 6px 0;
+	color: #a00a0a;
+}
+
+.cbox-option {
+	text-align:center;
+	color:#555555;
+	min-width: 40px;
+}
+.cbox-option:last-child {
+	padding-right:10px;
+}     
+
+.cbox-trash-icon {
+    height: auto;
+    width: 17px;
+    opacity: 0.7;
+}
+.cbox-trash-icon-open {
+	height: auto;
+    width: 17px;
+    opacity: 0.7;
+    margin-bottom: 3px;
+}
+
+.cbox-codenumber {
+	width: 10%;
+	padding: 0;
+}
+.cbox-expander i {
+	transform: rotate(0deg);
+	transition: transform 0.25s;
+	font-size:188%;
+}
+
+.cbox.expanded .cbox-expander i {
+	transform: rotate(180deg);
+	transition: transform 0.25s;
+}
+
+.cbox-expansion {
+	padding: 0px 10px 6px 10px;
+	opacity: 0;
+	transition: opacity 0.4s;
+}
+
+.cbox.expanded .cbox-expansion {
+	opacity: 1;
+	transition: opacity 0.2s;
+}
+
+.cbox-row {
+	margin: 6px 0;
+	clear: both;
+}
+
+.cbox-row:first-child {
+	margin-top: 0;
+}
+
+.cbox-row-title, .cbox-row-ititle {
+	font-weight: 500;
+}
+
+.cbox.roomy .cbox-row-title {
+	float: left;
+	clear: left;
+	line-height: 130%;
+}
+
+.cbox-row-content {
+	overflow-wrap: anywhere;
+}
+.cbox-desc-title {
+    /*text-shadow: 0px 1px 1px #949494;*/
+    background-image: linear-gradient(white, #fffbc7, white);
+    font-style: italic;
+}
+
+.cbox.roomy .cbox-row-content {
+	float: left;
+	clear: left;
+}
+.cbox-row-content.use_new_line {
+	float: left;
+	clear: left;
+}
+
+.cbox-row-title {
+	float: left;
+	padding-right: 4px;
+}
+
+.cbox-selitem {
+	position: relative;
+	display: inline-block;
+	float: left;
+	padding: 0 6px;
+	box-sizing: border-box;
+}
+
+.cbox-selitem-label {
+	line-height: 23px;
+}
+
+/*
+.cbox-selitem-label.waitlisted::after {
+	content: " (Waitlisted)";
+	color: orange;
+}
+
+.cbox-selitem-label.full::after {
+	content: " (Full)";
+	color: red;
+}
+*/
+
+.cbox-checkbox {
+	width: inherit;
+}
+/*.cbox .mdl-checkbox.is-upgraded {
+    padding-left: 19px;
+    padding-right: 10px;
+}*/
+.cbox-hover-pin-old {
+	display: none;
+	position: absolute;
+    top: -5px;
+    right: 12px;
+    cursor: pointer;
+    background-color: #ffffffbf;
+    z-index: 100;
+    margin: 1px;
+    border-radius: 3px;
+}
+.cbox-hover-pin {
+	display: none;
+	position: absolute;
+    top: -4px;
+    right: 10px;
+    cursor: pointer;
+    background-color: #ffffff;
+    background-image: url(../images/pin.png);
+    background-repeat: no-repeat;
+    background-position: 5px 2px;
+    border: 1px solid #c4c4c4;
+    height: 16px;
+    width: 16px;
+    z-index: 100;
+    margin: 0px;
+    padding: 1px;
+    border-radius: 3px;
+    color: #780606;
+    font-size: 10px;
+}
+
+.cbox-allnone {
+	/*clear:both;*/
+	display: inline-block;
+	float: right;
+}
+
+.cbox .mdl-button {
+	height: 26px;
+	line-height: 26px;
+	font-size: 100%;
+	font-weight: normal;
+}
+.cbox-select-wildcard .select-title {
+	text-align: center;
+    padding-bottom: 6px;
+    color: #E53737;
+}
+.cbox-select-wildcard .cbox table{
+	height: 62px;
+}
+.cbox-select-wildcard .cbox table td{
+	text-align: center;
+}
+.cbox-select {
+	margin: 0 0 0 5px;
+}
+
+
+.rbox {
+	margin-bottom: 9px;
+}
+.rbox.cnf_baggage {
+	display: none !important;
+}
+
+.rbox-header {
+	padding-bottom: 6px;
+}
+
+.rbox-header-cont{
+}
+
+.rbox-wheader {
+	float:left;	
+}
+
+.rbox-has-reqid {
+	box-shadow: 0 2px 2px 0 rgba(0, 0, 0, .14), 0 3px 1px -2px
+		rgba(0, 0, 0, .2), 0 1px 5px 0 rgba(0, 0, 0, .12);
+	border-radius: 4px;
+	box-sizing: border-box;
+	background-color: #ffffff;
+	margin-bottom: 0px;
+	padding: 6px;
+	margin-bottom: 9px;
+}
+
+.rbox-has-reqid.not_last {
+	margin-bottom: 0px;
+}
+
+.rbox-wc-header {
+	font-weight: 500;
+}
+
+#size-tester {
+	position:absolute;
+	opacity:0;
+	top:0;
+	left:0;
+}
+
+.hide-course {
+	display:none !important;
+}
+.ui-debug .hide-course {
+    border: 2px #AAA dashed;
+}
+.ui-debug .hide-course > div{
+	opacity: .1;
+}
+.ui-debug .hide-course::after {
+	color:#BBB;
+    content: " HIDDEN ";
+    font-size: 20px;
+    margin-top: -20px;
+    position: absolute;
+    width: 100%;
+    text-align: center;
+    height: 10px;
+}
+.ui-debug .sp.hide-course::after {
+    font-size: 12px;
+   	color:#000;
+   	position:initial;
+}
+    
+.ui-debug .time_block.hide-course::after{
+   	color:#000;
+	font-size: 15px;
+	margin-top: 0px;
+    margin-left: -34px;
+}
+.ui-debug .sp.hide-course,
+.ui-debug .time_block.hide-course{
+	opacity: .2;
+}
+.ui-debug .hide-course {
+	display:revert !important;
+}

@@ -1,0 +1,2499 @@
+"use strict";
+
+var legend = null;
+var schedule = null;
+var schedule2 = null;
+var previewSchedule = null;
+var tabbing = false;
+var m1callbackGo = null;
+var m3callbackGo = null;
+var popupNoticeMap = {};
+var popupNotice = null; // The current one
+var fastHide = false;
+var hasPlans=false;
+
+var protocol = window.location.href.split(":")[0];
+var host = window.location.hostname;
+var port = window.location.port;
+
+var mssessionForTerm=[];
+var msinstructForTerm=[];
+
+$.ajaxSetup({
+    beforeSend: function (xhr)
+    {
+       xhr.setRequestHeader("X-Forwarded-Proto", protocol); // See note in vsb/pom.xml for Spring version
+	   if(host && !isNaN(port)){	
+	      xhr.setRequestHeader("X-Forwarded-Host", host);
+	      xhr.setRequestHeader("X-Forwarded-Port", port);
+	   }
+    }
+});
+
+//add event listener to detect tab key press and disable animations as per accessibility reqs
+document.addEventListener('keyup', (e) => {
+  if (e.which == 9){
+     $("body").addClass('noanimation');
+     jQuery.fx.off = true;
+     $("body")[0].offsetHeight;  
+  }
+});
+
+	
+var RR = (function() {
+	var my={};
+	var noteId=0;
+	var myPlanImportTerm=null;
+	var midrangeGoal=0;
+
+    /*
+     * Mdl tooltips do not activate when component receives focus via tab.
+     * This function will force all tooltips to activate whenever tabbed into.
+     * Limitation: It will work for buttons placed right after the tooltip div.
+     */
+	
+	var tooltipFocus = function() { 
+		var button = this;
+		var i = this.id;
+		var t = $(".mdl-tooltip").filter(function(t){
+			return this.getAttribute("for") === i;
+		})[0].MaterialTooltip;
+		
+		t.handleMouseEnter_({
+			target:{
+				getBoundingClientRect:function(){
+					return button.getBoundingClientRect()
+				}
+			}
+		})
+	};
+	
+	var tooltipFocusOut = function() { 
+		var button = this;
+		var i = this.id;
+		var t = $(".mdl-tooltip").filter(function(t){
+			return this.getAttribute("for") === i;
+		})[0].MaterialTooltip;
+		
+		t.hideTooltip_();
+	};
+	
+	my.updateTooltips = function() {
+		$(".mdl-tooltip + button").off("focus", tooltipFocus);
+		$(".mdl-tooltip + button").on("focus", tooltipFocus);
+		$(".mdl-tooltip + button").off("focusout ", tooltipFocusOut);
+		$(".mdl-tooltip + button").on("focusout ", tooltipFocusOut);
+		$(".reg_filter").removeAttr("tabindex"); // Prevent double-tabbing for sliders
+	}
+	
+	my.forceScreenReaderOutput = function(text, priority){
+	  var el = document.createElement("div");
+      var id = "speak-" + Date.now();
+      el.setAttribute("id", id);
+      el.setAttribute("aria-live", priority || "polite");
+      el.classList.add("sr-only");
+	  el.classList.add("visuallyhidden");
+      document.body.appendChild(el);
+
+      window.setTimeout(function () {
+        document.getElementById(id).innerHTML = text;
+      }, 100);
+
+      window.setTimeout(function () {
+          document.body.removeChild(document.getElementById(id));
+      }, 1000);
+	}
+	
+	my.toggleLegend = function () {
+		if ($(".reg_legend").is(":visible")) {
+			$('#results-legend-switch-label')[0].MaterialSwitch.off();
+			BB.legend=false;
+		} else {
+			$('#results-legend-switch-label')[0].MaterialSwitch.on();
+			BB.legend=true;
+		}
+
+		var legendElement = $(".reg_legend");
+		legendElement.remove();
+
+		var w=$(".check_media").width();
+		if (w<=680) {
+			$(".reg_legend-container.mobile").append(legendElement);
+	    	$(".reg_legend").slideToggle(200);
+	    } else {
+	    	$(".reg_legend-container.desktop").append(legendElement);
+	    	$(".reg_legend").toggle();
+	    }
+
+	    $(".reg_schedule").toggleClass("half");
+		$(".mobile-legend-icon").toggleClass("expanded");
+
+	}
+	
+	my.showLegend = function () {
+		$(".reg_legend").show();
+		$(".reg_schedule").addClass("half");
+	}
+	
+
+	my.addBadWarning=function(text,quick,ack,id) {
+		addWarning(text,false,quick,ack,id);
+	}
+
+	my.addGoodWarning=function(text,quick,ack) {
+		addWarning(text,true,quick,ack);
+	}
+
+	// If quick=true the next warning will remove it.
+	function addWarning(text,isGood,quick,ack,id) {
+		noteId++;
+		var $ma=$("#message_area");
+		if (BB.access) {
+			$ma.empty();
+		}
+		var $q=$ma.find(".quick"+(id?", .warnId"+id:""));
+		var animate=400;
+		var t="<div class='warningNote"+(isGood?"Good":"Bad")+" note"+noteId+(id?(" warnId"+id):"")+(quick?" quick":"")+(ack?" noteAck":"")+" takespace' style='display:none'><span></span>";
+		if (ack) {
+			t+=" <a href='javascript:void(0)' class='slider_close closeNote' title='Acknowledge and close'></a>";
+		}
+		t+="</div>";
+		$ma.append(t);
+		var $t=$ma.find(".note"+noteId);
+		$t.find("span").html(text);
+		$t.find(".closeNote").click(function() {
+			$(this).parent().removeClass("takespace").slideUp(function() {
+				$(this).remove();
+			});
+			RR.settleMidrange();
+		});
+		$q.stop().remove();
+		$t.show(400,function() {
+			//$(this).attr("role","alert");
+			RR.settleMidrange();
+		});
+		_alert(text);
+
+		function delNote(id,animate) {
+			return function() {
+				$(".note"+id).removeClass("takespace").hide(animate, function() {
+					$(this).remove();
+				});
+				RR.settleMidrange();
+			}
+		}
+
+		if (!ack) {
+			setTimeout(delNote(noteId,animate),8000);
+		}
+	}
+	
+	my.showUserAgreement = function(complete, agreementContent, overrideTermId) {
+
+		var term = BB.activeState.term;
+		if(overrideTermId){
+			term = overrideTermId;
+		}
+		
+		var html = "";
+		function agreeAndClose() {
+			if (complete) {
+		    	$.ajax({
+					url: "api/v2/agreement/agree?term=" + term,
+					success: function(result){
+						complete();
+					
+					},
+					error: function(error) {
+						console.error("Unable to update agreement.  Will display again.");
+						popupNotice.close();
+					}
+	        	});
+			}
+		}
+		
+		
+		if(agreementContent.htmlContent != null){
+			html += agreementContent.htmlContent;
+		}
+		else if(agreementContent.textContent != null){
+			html+=`<div class="promissory_popup_agreement">
+					<p>`+agreementContent.textContent+`</p>
+					</div>`;
+		}
+		else if(agreementContent.url != null){
+			html+=`<div class="promissory_popup_agreement">
+					<iframe src="`+agreementContent.url+`" height="900" width="900"></iframe>
+					</div>`;
+		}
+		
+		//if there is a default message to display even after a user has completed an agreement, display:
+		if(agreementContent.defaultAgreementHtml != null){
+			var buttons=[{name:"I Agree",action:function() {complete(true);}},
+					         {name:"Cancel",action:function() {popupNotice.close();}}];
+			if(agreementContent.disableAgreeButton){
+				buttons=[{name:"Cancel",action:function() {popupNotice.close();}}]; 
+			}
+			
+			RR.popNotice(agreementContent.defaultAgreementHtml,buttons, function(){}, agreementContent.title, null, null, {"css": {"width": "1200px", "height": "400px"}});
+		}
+		//otherwise, display any pending agreements that must be completed:
+		else{		
+			var buttons=[{name:"I Agree",action:function() {agreeAndClose();}},
+				         {name:"Cancel",action:function() {popupNotice.close();}}];
+			
+			if(isAdvising){
+				buttons=[{name:"Bypass as Advisor",action:function() {complete();}},
+				         {name:"Cancel",action:function() {popupNotice.close();}}];
+			}
+			else if(agreementContent.disableAgreeButton){
+				buttons=[{name:"Cancel",action:function() {popupNotice.close();}}]; 
+			}
+				
+			RR.popNotice(html,buttons, function(){}, agreementContent.title, null, null, {"css": {"width": "100%", "height": "90%"}});
+		}
+	}
+	
+	my.custUserAgreement = function(complete, triggerLocationCode, overrideTermId) {
+		if (!isAuthenticated) {
+			complete();
+			return;
+		}
+		var term = BB.activeState.term;
+		
+		if (overrideTermId){
+			term=overrideTermId;
+		}
+		
+		$.ajax({
+			url: "api/v2/agreement/getAgreement?term=" + term +"&vsbTriggerLocationCode="+triggerLocationCode,
+			success: function(result){
+				if(result.userNeedsToAgree == true || result.defaultAgreementHtml != null){
+					RR.showUserAgreement(complete, result, term);
+				}else{
+			    	complete();
+				}
+			},
+			error: function(error) {
+				console.error("Unable to determine status of promissory agreement.  Will display again.");
+			}
+		});
+	}
+
+	my.renderMyPlanImport = function(cancel) {
+		var term=BB.activeState.term;
+		if (term!=null && (term!=myPlanImportTerm || cancel)) {
+			var $sel=$(".plan-import-options").show();
+			$("#plan_import_container").hide();
+			if (cancel) {
+				//return; // TODO make this unnecessary
+			}
+			$sel.html("<span>Loading...</span>");
+			$.getJSON("api/getAcademicPlans?term="+term, function(plans) {
+				$("#plan_import_container").empty().show();
+				$sel.empty();
+				
+				
+				var h="";
+				if (term=="0") {
+					h="(No term selected)";
+				}
+				else if (plans.length==0) {
+					h=i8n.s("noDwPlanFor",EE.terms[term].name);
+				}
+				if (term!="0") {
+					for (var i=0;i<plans.length;i++) {
+						var plan=plans[i];
+		
+						var t=plan.description;
+						if (plan.credits) {
+							t+=" ("+(Math.round(+plan.credits*100)/100)+" credits)";
+						}
+						var id=plan.id;
+						var c = "mdl-button mdl-js-button mdl-button--raised";
+						if (plan.termCode === BB.activeState.term) {
+							c += " mdl-button--accent";
+						} else {
+							c += " white-background";
+						}
+						
+						var pTitle1=t.replace(/"/g,"\\\"");
+						var pTitle2=t.replace(/'/g,"\\\'");
+						var isEmpty=(!plan.planGroup.groups || plan.planGroup.groups.length==0) && plan.planGroup.plannedCourses.length==0;
+						
+						h+='<input class="' + c + '" clear_plan_button" type="button" value="'
+						+ pTitle1 + (isEmpty?" (Empty)":"") + '" onclick="return UU.caseImportPlan(\''+id+'\',false,\''+pTitle2+'\',function(){RR.closeSelCourseTabOrPopup(\'#noticePopup\');})">';
+						// Save to memory
+						MM.planHeaders[id]=plan;
+					}
+					
+					if (plans.length >= 0) {
+						$('#degreeCounter').html("(" + plans.length + ")")
+					}
+					
+					if (plans.length > 0) {
+						hasPlans=true;
+						if(template=="dur"){
+							enforceMaxCohortness=true;
+						}
+					} else{
+						hasPlans=false;
+					}
+				}
+				$sel.html(h);
+			}).fail(function(status) {
+				$sel.html("<span>Plan import failed.<br><br>"+status.statusText+"</span>");
+			});
+			myPlanImportTerm=term;
+		}
+	}
+
+	// Show the loading div after a small delay to
+	// prevent jitter if response is fast, or
+	// hide it immediately.
+	var loadTimer=null;
+	my.showLoadingDiv = function(show) {
+		if (show) {
+			if (loadTimer==null) {
+				loadTimer=setTimeout(function() {
+					$(".loadingDiv").show();
+					$(".page_whiteout").addClass("blanket");
+				},500);
+			}
+		} else {
+			if (loadTimer!=null) {
+				clearTimeout(loadTimer);
+				$(".loadingDiv").hide();
+				$(".page_whiteout").removeClass("blanket");
+				loadTimer=null;
+			}
+		}
+	}
+
+	var genTimer=null;
+	my.showGeneratingDiv = function(show) {
+		if (show) {
+			if (genTimer==null) {
+				genTimer=setTimeout(function() {
+					$("#flap_loading2").show();
+					$(".reg_row1").hide();
+				},500);
+			}
+		} else {
+			if (genTimer!=null) {
+				clearTimeout(genTimer);
+				$("#flap_loading2").hide();
+				$(".reg_row1").show();
+				genTimer=null;
+			}
+		}
+	}
+
+	function renderCodeNumberFilters(gState) {
+
+		// Remove CodeNumberFilters that are in DOM but no longer in list
+		$(".requirementDiv2").each(function() {
+			if ($(this).is("#templateCourse2")) return;
+			var cnfid=$(this).data("cnfid");
+			if (gState.getCnf(cnfid)==null) {
+				$(this).removeClass("requirementDiv2").hide(fastHide?0:400, function() {
+					$(this).remove();
+				});
+			}
+		});
+		
+		// Refresh/Add CodeNumberFilters in the list
+		for (var i=0;i<gState.cnfs.length;i++) {
+			var cnf=gState.cnfs[i];
+			var first=(cnf.reqId!=null);
+			//if (i>0 && cnf.reqId==gState.cnfs[i-1].reqId) first=false;
+			var last=(cnf.reqId!=null);
+			//if (i+1<gState.cnfs.length && gState.cnfs[i+1].reqId==cnf.reqId) last=false;
+			renderCodeNumberFilter2(cnf,first,last,i,gState.cams);
+		}
+		
+		//componentHandler.upgradeDom(null,"mdl-tooltip");
+		componentHandler.upgradeDom(); // TODO optimize?
+
+	}
+
+	function renderTerm(gState) {
+		$("#term_"+gState.term).prop("checked",true);
+		gState.term = gState.term || 0;
+		if (gState.term==0) $(".termRadio").prop("checked",false);
+		$("#phone_term_select").val(gState.term);
+	}
+
+	my.renderAddCoursesPage = function(gState) {
+		renderTerm(gState);
+		renderCodeNumberFilters(gState);
+
+
+		var isTerm=(gState.term!=null && gState.term!=0)
+		msExpandible("collegeSelector",isTerm);
+		msExpandible("campusSelector",isTerm);
+		msExpandible("locationSelector",isTerm);
+		msExpandible("instructSelector",isTerm);
+		msExpandible("sessionSelector",isTerm);
+
+		// Apply overrides
+		if (BB.activeState.term!=0){
+			var tv = EE.terms[BB.activeState.term];
+			disableEnroll=tv.disableEnroll;
+			disableCart=tv.disableCart||isAdvising;
+			var importOnly = EE.isBlockAdditionalCourses()||!BB.activeState.pac;
+			$(".importOnlyPlan").toggleClass("disableImports",importOnly).toggle(importOnly);
+			my.settlePlusBox();
+		}
+		$(".hideIfDisableEnroll").toggle(!disableEnroll && (typeof custViewMyClassSchedule == "function"));
+		$(".hideIfDisableCart").toggle(!disableCart && (typeof custViewMyShoppingCart == "function"));
+		$("#linkReturnToStudentCentre").toggle((typeof custReturnToStudentCentre == "function"));
+	}
+
+	my.settlePlusBox = function() {
+		var noSelect=GG.isActiveTermNoSelect();
+		$(".noSelectAlert").toggle(noSelect&&!isAdvisor&&isAuthenticated);
+		$(".noSelectAlertAdvisor").toggle(noSelect&&isAdvisor&&isAuthenticated);
+		$(".noSelectAlertGuest").toggle(noSelect&&!isAuthenticated);
+		$(".plusInput").toggleClass("hideIfNoSelect",noSelect);
+		
+		var dis=($(".disableImports").length>0);
+		$("#code_number").prop("disabled",dis||noSelect).toggleClass("dont-enable",dis||noSelect);
+		
+		$(".advSearchButton").css("pointer-events",((dis||noSelect)?"none":"auto")).prop("disabled",dis||noSelect).toggleClass("dont-enable",dis||noSelect);
+		
+		$("#degreePlanButton").prop("disabled",dis);
+		$("#cappButton").prop("disabled",dis);
+		$("#degreeAuditButton").prop("disabled",dis);
+		$("#courseQueueButton").prop("disabled",dis);
+	}
+
+	my.highlightClass = function(id,state) {
+		//if (state) {
+		//	$(".bc"+id).addClass("bl"+id);
+		//} else {
+		//	$(".bc"+id).removeClass("bl"+id);
+		//}
+	}
+
+	my.renderSort = function(newSort) {
+		Profiler.setParameterState(translateSortToParameter(BB.activeState.sort), false);
+		Profiler.setParameterState(translateSortToParameter(newSort), true);
+
+		// Set mobile and set desktop
+		var $m=$("#"+newSort+"mobile");
+		$m.prop("checked",true);
+		$("#sort_by").val(newSort);
+	}
+
+	my.renderFilter = function() {
+		var f = BB.activeState.filters;
+		function apply(el,v) {
+			["","mobile"].forEach(function(e) {
+				var mdSwitch = $("#"+el+e+"_label")[0];
+				if (!mdSwitch) {
+					return;
+				}
+				if (!v) {
+					mdSwitch.MaterialSwitch.on();
+				} else {
+					mdSwitch.MaterialSwitch.off();
+				}
+			});
+		}
+		
+		apply("hide_full",f.hideFull);
+		apply("hide_waitlistable",f.hideWaitlistable);
+		apply("hide_online",f.hideOnline);
+		apply("hide_on_campus",f.hideOnCampus);
+		apply("hide_reserved",f.hideReserved);
+		apply("hide_closed",f.hideClosed);
+		apply("hide_no_honors",!f.hideNoHonors);
+		apply("hide_honors",!f.hideHonors);
+		apply("hide_off_campus",f.hideOffCampus);
+		
+		my.updateFiltersCount();
+	}
+
+	my.updateFiltersCount = function (){
+		var f = BB.activeState.filters;
+
+		var count = [
+			f.hideFull, 
+			f.hideWaitlistable, 
+			f.hideOnline, 
+			f.hideOnCampus, 
+			f.hideReserved, 
+			f.hideClosed, 
+			f.hideNoHonors, 
+			f.hideHonors
+		].filter(function(v){return v}).length;
+		$("#filtersCount").html(count>0?"("+count+")":"");
+	}
+	
+	my.popNotice = function(noticeHtml,buttons,closeFct,title,noResize,bMessage,options,popupId) {
+		popupId = popupId || '#noticePopup';
+		 
+		var popupNotice = popupNoticeMap[popupId];
+		if (!(!closeFct)) {
+			noticePopupClose=closeFct;
+		} else {
+			noticePopupClose=function() {};
+		}
+		$(popupId).css("resize",noResize?"none":"both");
+		
+		if (noticeHtml) {
+			$(popupId + " .popup-body").empty().append(noticeHtml);
+		}
+	
+		$(popupId + " h3").text(title?title:"Notice");
+		var $b=$(popupId + " .popupNoticeButtons");
+		if (buttons) {
+			var h="";
+			for (var i=0;i<buttons.length;i++) {
+				var b=buttons[i];
+				h+=" &nbsp; <input type='button' class='big_button pbut"+i+"' value='"+b.name+"'/> ";
+			}
+			$b.html(h);
+			for (var i=0;i<buttons.length;i++) {
+				var btnAction = buttons[i].action;
+				var btnName = buttons[i].name;
+				var btn = $b.find(".pbut"+i);
+				if(btnAction) { btn.click(btnAction); }
+				if (btnName === "Print") {
+					btn.click(function(){window.print()});
+				} else if (btnName == "Submit Pin") {
+					//do not call popupNotice.close
+				} else {
+					btn.click(popupNotice.close);
+				}
+			}
+		} else {
+			$b.empty();
+		}
+		$b.prepend("<div class='popupNoticeButtonMessage'>"+(bMessage?bMessage:"")+"</div>");
+		if (options) {
+			if (options.css) {
+				for (var o in options.css) {
+					$(popupId).css(o,options.css[o]);	
+				}
+			}
+		}
+		popupNotice.open();
+		
+		my.updateFocus(popupId);
+	}
+
+	my.updateFocus = function(id, maintainFocus) {
+		var popupId = id ? id:"#noticePopup"
+		var popup = $(popupId); 
+		popup.find(':focusable, .focusable').off('keydown');
+
+		var first = popup.find(':focusable, .focusable').first();
+		var last = popup.find(':focusable, .focusable').last();
+		
+		
+		// Look for first element in view to prevent popup from 
+		// scrolling away from previous position.
+		var firstInView;
+		var fElements = popup.find(':focusable, .focusable');
+		
+		fElements.each(function() {
+			var e = $(this);
+			if (!firstInView && e.offset().top > 0) {
+				firstInView = e;
+			}
+		})
+		
+		firstInView = firstInView || first;
+		
+		if (!maintainFocus) {
+			firstInView.focus();
+		}
+		
+		first.on('keydown', function(e) {
+			if (e.shiftKey && e.keyCode === 9) {
+				last.focus();
+				return false;
+			}
+			
+			return true;
+		});
+
+		last.on('keydown', function(e) {
+			if (e.keyCode !== 9) {
+				return true;
+			}
+			if (!e.shiftKey) {
+				first.focus();
+				return false;
+			}
+			popup.find(':focusable, .focusable').eq(-2).focus();
+			return false;
+		});
+	}
+	
+	my.displayAdvice = function(planHeaderId) {
+		if (planHeaderId=="0") return;
+		var header=MM.planHeaders[planHeaderId];
+		if (!header || !header.planRecInfo) return;
+		var advice=header.planRecInfo.advice;
+		var $bac=$(".bottomAdvice");
+		if (advice && advice.length>0) {
+			BB.advice=header.termCode;
+			$bac.show();
+			$bac.html(header.planRecInfo.advice);
+			$bac.find("a").each(function() {
+				var itemname=$(this).data("input");
+				if (itemname) {
+					var doit=function() {
+						UU.caseAddCourse(itemname);
+					}
+					$(this).click(doit);
+				}
+			});
+		}
+	}
+	
+	my.settleMidrange = function() {
+		var nh=0;
+		$("#sel_midrange .takespace").each(function() {
+			nh+=$(this).outerHeight();
+		});
+		if (nh<30) nh=30;
+		if (nh!=midrangeGoal) {
+			midrangeGoal=nh;
+			//console.log("New Midrange Height:"+nh);
+			$("#sel_midrange").stop().animate({minHeight:midrangeGoal},150);	
+		}
+	}
+	
+	my.changeSelCourseTabToPopupIfWide = function(panel,buttons) {
+		if (BB.wideScreen) {		
+			var title=$("#"+panel+" .select-course-title").text().trim();
+			if ($("#noticePopup:visible .popup-title h3").text()==title) {
+				return; // Already there
+			}
+			var $c=$("#"+panel+" .tab_content").detach();
+			RR.popNotice($c,buttons,function() {
+				var $c2=$("#noticePopup .tab_content").detach();
+				$("#"+panel+" .tab_container").append($c);
+			},title,false);
+		} else {
+			my.changeSelCourseTab(panel);
+		}
+	}
+	
+	my.closeSelCourseTabOrPopup = function(id) {
+		var popupNotice = popupNoticeMap[id];
+		if ($("#tab_selected.full_page_content").is(":visible")) {
+			popupNotice.close();
+		} else {
+			my.changeSelCourseTab("tab_selected");
+		}
+	}
+	
+	my.changeSelCourseTab = function(panel) {
+		$("#page_criteria .full_page_content").each(function() {
+			if ($(this).is(":visible")) {
+				$(this).fadeOut(300,function() {
+					$("#"+panel).fadeIn(150);
+				});	
+			}
+		});
+	}
+	
+	my.importRecPopup = function() {
+		var $o=$(".reg_recommendation").first()
+		var $c = $o.clone();
+		$c.show();
+		$c.children().hide();
+		$c.children('#suggestedResult').show();
+		var d = $('<div></div>');
+		d.append($c);
+		d.click(function(){$('#noticePopup').hide();popupNotice.close();});
+		
+		d.find('canvas').each(function() {
+			var id = $(this).attr('id');
+			var oc = $o.find('canvas#'+id);
+			
+		    var context = $(this)[0].getContext('2d');
+		    context.drawImage(oc[0], 0, 0);
+		});
+
+		var buttons=[
+				{
+					name:"Cancel",
+					action:popupNotice.close
+				}];
+		
+		RR.popNotice(d,buttons,false,"My Recommendations");		
+	}
+	
+	function isPassingInclusionList(list,inst,acadCareer) {
+		var list2=","+list+",";
+		return (list2.indexOf(","+inst+",")>=0 || list2.indexOf(","+inst+"_"+acadCareer+",")>=0);
+	}
+	
+	// Hide import buttons as per user's Term-Activation
+	my.filterImportButtons = function() {
+		if (!EE.studentDetail || !EE.studentDetail.terms) return;
+		
+		function includeButtonTest(list,buttonName) {
+			if (list.length>0) {
+				var found=false;
+				for (var i=0;i<EE.studentDetail.terms.length;i++) {
+					var sct=EE.studentDetail.terms[i];
+					if (isPassingInclusionList(list,sct.term.institution,sct.term.acadCareer)) {
+						found=true;
+						break;
+					}
+				}
+				if (!found) {
+					$(buttonName).remove();
+				}
+			}
+		}
+		
+		// Audit
+		includeButtonTest(dwAuditInstitutions,"#degreeAuditButton")
+		
+		// Plan
+		includeButtonTest(dwSepInstitutions,"#degreePlanButton")
+		
+		// Hide label if no buttons
+		if ($("#degreePlanButton").length==0 && $("#cappButton").length==0 && $("#aarButton").length==0 && $("#degreeAuditButton").length==0 && $("#courseQueueButton").length==0) {
+			$("#importMyLabel").hide();
+		}
+		
+		// Hide CSV Recommendation import if list defined and not in list
+		var ais=EE.studentDetail.advisorInstitutions;
+		if (ais&&csvImportInstitutions.length>0) {
+			var list=","+csvImportInstitutions+",";
+			var found=false;
+			for (var i=0;i<ais.length;i++) {
+				if (list.indexOf(","+ais[i]+",")>=0) {
+					found=true;
+				}
+			}
+			if (!found) {
+				$(".rec-import-csv").hide();
+			}	
+		}
+		
+	}
+	
+	my.initBottomLinks = function() {
+		for (var el of extraLinks) {
+			var icon=el.icon?el.icon:"fa-external-link";
+			if (el.placement&&!el.placement.some(f=>f=="select")) continue;
+			$(".bottomLinks").append("<a href='"+el.href+"'"+(el.target?(" target='"+el.target+"'"):"")+"><i class='fa "+icon+"' aria-hidden='true'></i> "+el.name+"</a>");
+		}
+	}
+	
+	return my;
+}());
+
+
+function initCriteria() {
+	
+	$(".eeLoadingAnimation").addClass("eeLoadingAnimationSee");
+	
+	// Transfer header_Invader
+	var at=$(".autho_text").text();
+	if (at) {
+		$(".alt_autho_text").text(at.trim());
+	}
+	$(".alt_sign_in_button").click(function(){vsbTimer.doLogin();});
+	$(".alt_sign_out_button").click(function(){vsbTimer.doLogout('link');});
+
+	$.ajaxSetup({ cache: false });
+    AutoSuggest.init({});
+
+    if (vsbDatabase) {
+    	Profiler.init([]);
+		Profiler.recording = true;
+		Profiler.activateAllParameters();
+    }
+
+	if (history.pushState) {
+		$(window).on("popstate", function() {
+			UU.caseBackButton();
+		});
+	}
+
+	$(".plusBox").click(function() {
+		if ($("#code_number").prop("disabled")) return;
+		BUBBLES.skipCampusStep();
+		BUBBLES.update(false);
+	});
+
+	$("#locationRegion").click(function(){
+		BUBBLES.update(false);
+	});
+
+	$('#suggestState').on('click',function() {
+		PAGES.openFavorites();
+		BB.page="favorites";
+		PAGES.renderCurrentPage();
+		$(".tabtab_rec").click();
+		$(".rec-but-new").click();
+	});
+
+	if (preopenCampusSelector && BB.activeState.term!=0) {
+		$("#camSelector").show();
+		BUBBLES.update(false);
+	}
+
+	// Results Page Stuff
+	$(".basic").selectOrDie();
+
+	$("#custom").click(function() { // Mouse over
+		if($(this).hasClass('cliked')) { // TODO
+			$('body').removeClass('nobg');
+			$("#custom").parents().siblings().css('opacity','1');
+			$(this).removeClass('clicked');
+		} else {
+			$('body').addClass('nobg');
+			$(this).addClass('clicked');
+			$(this).parents().siblings().css('opacity','0.1');
+		}
+	});
+
+	$(".sod_option").click(function() {
+		$('body').removeClass('nobg');
+		$("#custom").parents().siblings().css('opacity','1');
+	});
+
+	$(document).click(function(ev) {
+		$('body').removeClass('nobg');
+		$("#custom").parents().siblings().css('opacity','1');
+
+		// Hide main menu if user clicks other than on menu
+		if ($(ev.target).parents(".main_menu").length<=0 &&
+				// Keep menu open when user clicks on remove student from advising
+				ev.target.className !== "remove") {
+			$(".main_menu").hide();
+			$(".mi_message_box").hide();
+		}
+	});
+
+	// Timezone
+	var $tz=$("#mytimezone");
+	$tz.empty();
+	for (var i=0;i<timezones.length;i++) {
+		var t=timezones[i];
+		$tz.append("<option value='"+t.id+"'>"+t.name+"</option>");
+	}
+	$tz.change(function () {
+		UU.caseChangeTimezone($tz.val());
+	});
+	$tz.val(""+getTimezone());
+
+
+	document.onkeydown = function(event) {
+		var keyID;
+		if (window.event) {
+			keyID=window.event.keyCode;
+		}
+		else {
+			keyID=event.which;
+		}
+		if (keyID==37) {
+			UU.casePrevResult();
+		}
+		else if (keyID==39) {
+			UU.caseNextResult();
+		}
+		else if (keyID==9) {
+			// TAB
+			tabbing=true;
+		}
+		else if (keyID==18) {
+			// Alt
+			tabbing=true;
+		}
+	};
+	
+	$(".sdl_input > input").each(function() {
+		initSdlInput($(this));
+	});
+	//initSdlInput($("#code_number"))
+	//initSdlInput($("#code_number"))
+
+	// init functions should only be called once:
+	PAGES.initPages();
+	DRAGGING.dragInit();
+	MENU.initMenu();
+	RR.initBottomLinks();
+	popupsort();
+	popupfilter();
+	popuptips();
+	popupnotice();
+	popupaar();
+	ET.init();
+	PL.initPlanImport();
+	QQ.initQueue();
+	RR.settleMidrange();
+}
+
+
+
+
+function initMultiselectors() {
+    // Initialize MultiSelector - College
+    var m1callback = function(noChecking,force) {
+    	for (var i=0;i<mscams.length;i++) {
+    		var col=mscams[i].obj1;
+    		for (var j=0;j<mscols.length;j++) {
+    			if (mscols[j].text==col) {
+    				var oldShow=mscams[i].show;
+    				mscams[i].show=mscols[j].checked;
+    				if (!oldShow && mscams[i].show && !noChecking && !mscams[i].disabled) {
+    					mscams[i].checked=true;
+    				}
+    			}
+    		}
+    	}
+
+		for (var k=0;k<msinstructForTerm.length;k++) {
+			var found=false;
+    		for (var j=0;j<mscols.length;j++) {
+    			if (!msinstructForTerm[k].institution || (mscols[j].checked && msinstructForTerm[k].institution.indexOf(mscols[j].value)!=-1)) {
+					found=true;
+        			break;
+    			}
+    		}
+			msinstructForTerm[k].show=found;
+		}
+		
+    	msRefresh("campusSelector");
+    	msRefresh("instructSelector");
+    	
+    	if (filterSession) {
+			for(var i=0;i<mssessionForTerm.length;i++){
+				var session=mssessionForTerm[i];
+				var found=false;
+	    		for (var j=0;j<mscols.length;j++) {
+	    			if (mscols[j].checked && session.institution.includes(mscols[j].value)) {
+						found=true;
+	        			break;
+	    			}
+	    		}
+				var oldShow=session.show;
+				session.show=found;
+				if (!oldShow && session.show) {
+					session.checked=true;
+				}
+			}
+	    	msRefresh("sessionSelector");
+    	}
+    	
+        m2callback(force);
+    	applyCampusFilterChange();
+    }
+    m1callbackGo=m1callback;
+    var m1Params={textAll:"All", textNone:i8n.none, textListTitle:i8n.colleges, textBoxTitle:"", columns:2};
+    var m1 = new Multiselect("collegeSelector",m1Params,mscols,m1callback, "disable-get-schedule");
+    msExpandible("collegeSelector",false);
+
+    // Initialize MultiSelector - Campus
+    var m2callback = function(force) {
+    	// Flag all locations to not show
+    	for (var i=0;i<mslocs.length;i++) {
+    		mslocs[i].obj1=false;
+    	}
+
+    	// Flag locations that are part of the selected
+    	// campuses to show
+    	for (var i=0;i<mscams.length;i++) {
+    		if (!mscams[i].show || !mscams[i].checked) continue;
+    		var locs=mscams[i].obj2; // Get campus location array
+    		var inst=mscams[i].obj1; // Get campus' institution XXX obj1 is college desc
+    		var pts=mscams[i].value.split("i");
+    		var inst1=pts.length>=2?(pts[0]+"i"):"";
+    		var inst2=pts.length>=2?"SHAREi":"";
+    		for (var j=0;j<locs.length;j++) {
+    			var loc=locs[j];
+    			var key1=inst1+loc;
+    			var key2=inst2+loc;
+            	for (var k=0;k<mslocs.length;k++) {
+            		if (mslocs[k].value==key1 || mslocs[k].value==key2) {
+            			mslocs[k].obj1=true;
+            			break;
+            		}
+            	}
+    		}
+    	}
+    	
+    	// Set locations to show, and if they're showing
+    	// for the first time now, set them to be checked
+    	for (var i=0;i<mslocs.length;i++) {
+    		if (mslocs[i].obj1) {
+    			if (!mslocs[i].show) {
+    				mslocs[i].checked=true;
+    			}
+    			mslocs[i].show=true;
+    		} else {
+    			mslocs[i].show=false;
+    		}
+    	}
+
+
+    	msRefresh("locationSelector");
+    	applyCampusFilterChange(force);
+    }
+    var allSense=i8n.all+" (%n)";
+    if (filterCollege) {
+    	allSense=i8n.allWithinColleges;
+    }
+    var m2Params={textAll:allSense, textNone:i8n.none, textListTitle:i8n.campuses, textBoxTitle:"", columns:2,
+    	textNoneVisible:i8n.collegeMustSelectFirst
+    };
+    var m2 = new Multiselect("campusSelector",m2Params,mscams,m2callback, "disable-get-schedule");
+    msExpandible("campusSelector",false);
+
+    // Initialize Location MultiSelector
+    var m3callback = function() {
+    	applyCampusFilterChange();
+    }
+    m3callbackGo=m3callback;
+    var m3Params={textAll:i8n.allNWithin,  textNone:i8n.none, textListTitle:i8n.locations, textBoxTitle:"", columns:2,
+   		textNoneVisible:i8n.campusMustBeSelectedFirst
+	};
+    var m3 = new Multiselect("locationSelector",m3Params,mslocs,m3callback, "disable-get-schedule");
+    msExpandible("locationSelector",false);
+}
+
+// Note: Depends on enrolled classes being present. Called when Term changed.
+function doInitialCampusSelection(gState) {
+	
+    // Initialize MultiSelector - Instructional Method (not in initMultiselectors because depends on term)
+    var m4callback = function () {
+    	msRefresh("instructSelector");
+    	applyCampusFilterChange();
+    };
+    var m4Params={
+    		textAll:"All",
+    		textNone:i8n.none,
+    		textListTitle:i8n.instructionalMethods+":",
+			textNoneVisible:i8n.collegeMustSelectFirst,
+    		textBoxTitle:"",
+    		columns:2
+    		};
+
+	// Copy GState to MultiSelect - Instruction Methods
+	var instruct=gState.instruct;
+	if (filterInstruct) {
+		if (!("any" in instruct)) {
+	    	for (var i=0;i<msinstructForTerm.length;i++) {
+				if (instruct[msinstructForTerm[i].value]) {
+					msinstructForTerm[i].checked=true;
+				} else {
+					msinstructForTerm[i].checked=false;
+				}
+	    	}
+		}
+	} else {
+		instruct={};
+    	instruct["any"]=true;
+	}
+	
+	if (filterInstruct) {
+		if (filterInstructSortReverse) {
+			msinstructForTerm.sort((a, b) => a.text < b.text ? 1 : -1);
+		} else {
+			msinstructForTerm.sort((a, b) => a.text < b.text ? -1 : 1);	
+		}
+    	var m4 = new Multiselect("instructSelector",m4Params,msinstructForTerm,m4callback, "disable-get-schedule");
+    	msExpandible("instructSelector",true);
+    }
+    
+	if (filterSession) {
+		 // Initialize MultiSelector - Session (not in initMultiselectors because depends on term)
+	    var m5callback = function () {
+	    	msRefresh("sessionSelector");
+	    	applyCampusFilterChange();
+	    };
+	    var m5Params={
+	    		textAll:"All",
+	    		textNone:i8n.none,
+	    		textListTitle:i8n.sessions+":",
+	    		textSelectShow: "<span class=\"accessOffOnly\">"+i8n.select+"</span><span class=\"accessOnly\">"+i8n.showSessions+"</span>",
+	    		textSelectHide: "<span class=\"accessOffOnly\">"+i8n.select+"</span><span class=\"accessOnly\">"+i8n.hideSessions+"</span>",
+	    		textBoxTitle:"",
+	    		columns:2
+	    		};
+		// Determine Sessions for this term and copy GState to MultiSelect
+	    mssessionForTerm=[];
+	    for (var i=0;i<mssession.length;i++) {
+	    	var sestext=mssession[i].text.split('|')[0];
+	    	var sestextTerm=mssession[i].text.split('|')[1];
+			if (!sestextTerm || sestextTerm==gState.term) {
+		    	var len = mssessionForTerm.push(Object.assign({}, mssession[i]));
+		    	mssessionForTerm[len-1].text=sestext
+		    	// set mssessionForTerm checked using gState.session
+		    	mssessionForTerm[len-1].checked=(gState.session["any"] || gState.session[mssessionForTerm[len-1].value]);
+			}
+		}
+		
+		if(alphanumSessionsSort){
+			mssessionForTerm.sort(function(a, b) {
+	  				const nameA = a.text.toUpperCase(); // ignore upper and lowercase
+	  				const nameB = b.text.toUpperCase(); // ignore upper and lowercase
+	  				if (nameA < nameB) {
+	   				 return -1;
+	  				}
+	  				if (nameA > nameB) {
+	  				  return 1;
+	 				}
+	 				return 0;
+			});
+		} else {
+			mssessionForTerm = mssessionForTerm.sort(function(a, b) {
+				return parseInt(a.value)>parseInt(b.value)?1:-1;
+			});
+		}
+		
+	    var m5 = new Multiselect("sessionSelector",m5Params,mssessionForTerm,m5callback);
+	    msExpandible("sessionSelector",true);
+	}
+
+	// Copy GState (plus campuses with enrollments) to MultiSelect - Campuses
+	var cams={};
+	// Get enrolled Campuses
+	for (var c=0;c<gState.cnfs.length;c++) {
+		var cnf=gState.cnfs[c];
+		var selPro=cnf.getEnrolledSelPro();
+		if (selPro==null) {
+			selPro=cnf.getCartSelPro();
+			if (selPro==null) {
+				continue;
+			}
+		}
+		for (var k=0; k<selPro.sel.classes.length; k++) {
+			var cls=selPro.sel.classes[k];
+			cams[cls.campus]=true;
+		}
+	}
+	//var cams="GTW_GTWB_"; // Test
+
+	// Add current campuses (gState.cams)
+	var force=false;
+	for (var c in cams) {
+		if (!gState.cams[c]) force=true;
+		gState.cams[c]=true;
+	}
+
+	// Recalculate enabled state of campuses chackboxes
+	enableCampusesBasedOnTermAndStudent();
+    
+	// Set selected colleges based on the campuses.
+	selectCollegesBasedOnCampuses(gState.cams);
+
+	if (m1callbackGo!=null) {
+		m1callbackGo(true,force);
+	}
+
+	msRefresh("collegeSelector");
+
+	
+	// Copy GState to MultiSelect - Locations
+    var locs=gState.locs;
+    // If the Location Selector is not used, always have all selected
+    if (filterLocation) {
+        // Set initial locations selection
+        if (!("any" in locs)) {
+            for (var i=0;i<mslocs.length;i++) {
+            	var msloc=mslocs[i];
+            	if (!(msloc.value in locs)) {
+            		msloc.checked=false;
+            	}
+            }
+            msRefresh("locationSelector");
+            if (m3callbackGo!=null) {
+            	m3callbackGo();
+            }
+        }
+    } else {
+    	locs={};
+    	locs["any"]=true;
+	}
+
+    UU.campusLoadDone=true;
+
+}
+
+// Apply the GState (which is the source of truth) to the Multiselect model
+function enableCampusesBasedOnTermAndStudent() {
+
+	var camps=!EE.studentDetail? [] : EE.studentDetail.terms
+		.filter(function(t){return t.visibleSchoolTermIds.indexOf(BB.activeState.term)>-1})
+		.flatMap(function(t){return t.studentCareerTerms})
+		.flatMap(function(t){return t.camps});
+		
+	var allcamps=camps.indexOf(null)>=0;
+	camps=camps.filter(function(c){return c!=null});
+	
+	if (!allcamps) {
+		// For each MS Campus
+	    for (var i=0;i<mscams.length;i++) {
+			var disabled=camps && camps.length && camps.indexOf(mscams[i].value) === -1;
+			mscams[i].disabled=disabled;
+			if (disabled) {
+				mscams[i].checked=false;
+			}			
+		}
+	}
+}
+
+function selectCollegesBasedOnCampuses(cams) {
+		
+	// Reset Colleges MS Model
+	for (var i=0;i<mscols.length;i++) {
+		mscols[i].checked=false;
+	}	
+	// For each MS Campus
+    for (var i=0;i<mscams.length;i++) {
+    	// See if it is selected in the GState (from a URL or default)
+    	var ccc=mscams[i].value.split("_"); // (A single multiselect checkbox may represent more than one campus (for "Others"))
+    	var c=true;
+    	for (var i2=0;i2<ccc.length;i2++) {
+    		var ccci=ccc[i2];
+    		if (!(ccci in cams)) {
+    			c=false;
+    		}
+    	}
+    	// Copy GState state the MS model
+    	mscams[i].checked=c && !mscams[i].disabled;
+    	// Select College MS model based on Campus.
+    	if (c) {
+    		for (var j=0;j<mscols.length;j++) {
+    			if (mscols[j].text==mscams[i].obj1) {
+    				mscols[j].checked=true;
+    			}
+    		}
+    	}
+    }
+
+    // If the College Selector is hidden, then always have all colleges selected.
+	if (!filterCollege) {
+		for (var j=0;j<mscols.length;j++) {
+			mscols[j].checked=true;
+		}
+	}
+}
+
+// Copy the MultiSelect state to the GState
+function applyCampusFilterChange(force) {
+	var origC=BB.activeState.cams;
+	var c={};
+	for (var i=0;i<mscams.length;i++) {
+		var mscam=mscams[i];
+		if (mscam.show && mscam.checked) {
+			// Cover "Other" campus which may have multiple
+			var cs=mscam.value.split("_");
+			for (var j=0;j<cs.length;j++) {
+				c[cs[j]]=true;
+			}
+		}
+	}
+
+	var origL=BB.activeState.locs;
+	var l={};
+	var oneOrMoreNotChecked=false;
+	for (var i=0;i<mslocs.length;i++) {
+		var msloc=mslocs[i];
+		if (msloc.show) {
+			if (msloc.checked) {
+				l[msloc.value]=true;
+			} else {
+				oneOrMoreNotChecked=true;
+			}
+		}
+	}
+	if (!oneOrMoreNotChecked) {
+		l={};
+		l["any"]=true;
+	}
+	var origI=BB.activeState.instruct || {};
+	var I={};
+	oneOrMoreNotChecked=false;
+	for(var i=0;i<msinstructForTerm.length;i++){
+		var msstruct=msinstructForTerm[i];
+		if (msstruct.show) {
+			if (msstruct.checked) {
+				I[msstruct.value]=true;
+			} else {
+				oneOrMoreNotChecked=true;
+			}
+		}
+	}
+	if (!oneOrMoreNotChecked) {
+		I={};
+		I["any"]=true;
+	}
+
+	var origS=BB.activeState.session || {};
+	var S={};
+	oneOrMoreNotChecked=false;
+	for(var i=0;i<mssessionForTerm.length;i++){
+		var session=mssessionForTerm[i];
+		if (session.show) {
+			if (session.checked) {
+				S[session.value]=true;
+			} else {
+				oneOrMoreNotChecked=true;
+			}
+		}
+	}
+	if (!oneOrMoreNotChecked) {
+		S={};
+		S["any"]=true;
+	}
+
+	if (!(force) && sameContents(origC,c) && sameContents(origL,l) && sameContents(origI,I) && sameContents(origS,S) ){
+		return;
+	}
+	UU.caseChangeFilter(c,l,I,S);
+}
+
+function getDescribeCampuses(cams,maxLength) {
+	var names=new Array();
+	var len=0;
+	var nb=0;
+	for (var c in cams) {
+		if (len<=maxLength) {
+			var name=getCampusDesc(c);
+			len+=name.length;
+			if (names.length>0) len+=2; // account for comma
+		}
+		if (len<=maxLength) {
+			names.push(name);
+		}
+		nb++;
+	}
+
+	var s="";
+	var others=nb-names.length;
+	for (var i=0; i<names.length; i++) {
+		if (i>0 && i+1==names.length && others==0) {
+			s+="and ";
+		}
+		s+=names[i];
+		if (i+1<names.length) {
+			s+=", ";
+		}
+	}
+	if (others>0) {
+		if (names.length>=1) {
+			s+=","+i8n.and + others + i8n.others;
+		} else {
+			s+=others + i8n.campusesLC;
+		}
+	}
+	return s;
+}
+
+
+function popupsort() {
+	var popup = $('#popupsort').popup({
+		width : 250,
+		height : 300,
+		left : '20%'
+	});
+	$('#forsort').click(function() {
+		popup.open();
+	});
+}
+
+function popupfilter() {
+	var popup = $('#popupfilter').popup({
+		width : 250,
+		height : 300,
+		left : '20%'
+	});
+	$('#forfilter').click(function() {
+		popup.open();
+		RR.updateFocus("#popupfilter");
+	});
+	$('#forfilter_desktop').click(function() {
+		popup.open();
+		RR.updateFocus("#popupfilter");
+	});
+}
+
+function popuptips() {
+	var popup = $('#popuptips').popup({
+		width : 300,
+		height : 300,
+		closeFunction : function() {
+			SLIDER.hideTip();
+		}
+	});
+	$('#fortips').click(function() {
+		popup.open();
+		RR.updateFocus("#popuptips");
+	});
+}
+
+var noticePopupClose = function() {
+	// nothing by default
+}
+
+function popupnotice() {
+	popupNotification({
+		popupDiv: 'noticePopup',
+		popupWidth: 250,
+		popupHeight: 300,
+		popupLeft: '20%',
+		popupCloseFx: function() {
+			noticePopupClose();
+		}
+	});
+}
+function popupaar() {
+	popupNotification({
+		popupDiv: 'aarPopup',
+		popupWidth: 250,
+		popupHeight: 300,
+		popupLeft: '20%',
+		popupCloseFx: function() {
+			noticePopupClose();
+		}
+	});
+}
+
+/**
+ * Customizable popup configuration.
+ * @param c	Configuration {
+		popupDiv: // DIV to initialize popup off
+		popupWidth: // Popup window width
+		popupHeight: // Popup window height
+		popupLeft: 
+		popupCloseFx: // Function called when popup is closed
+	}
+ * @returns	Popup.
+ */
+function popupNotification(c) {
+	var popupId = '#' + c.popupDiv;
+	popupNotice = popupNoticeMap[popupId] = $(popupId).popup({
+		width: c.popupWidth,
+		height: c.popupHeight,
+		left: c.popupLeft,
+		closeFunction: c.popupCloseFx
+	});
+	return popupNoticeMap[popupId];
+}
+
+function getNoResultsIdea(gState) {
+	var pendingWildCardSelection = wildcardDefaultNoSelection && 
+		BB.activeState.cnfs.filter(function (cnf){
+			return cnf.options && cnf.options.length && !cnf.studentSelected;
+			}).length;
+			
+	if (pendingWildCardSelection) {
+		return i8n.selectElectiveCourseCustomMsg;
+	}
+			
+	for(var i=0;i<gState.cnfs.length;i++) {
+		var cnf=gState.cnfs[i];
+		if (cnf.drop.indexOf("dp_")==0 || cnf.ignore) continue;
+		if (cnf.sa.length>0 && cnf.sa.indexOf("l")<0) {
+			return i8n.s("noClassesSelected",cleanCnKey(cnf.cnKey));
+		}
+	}
+
+	if (gState.reasons.reasonNotEnoughCohort) {
+		return "The selected courses and classes do not contain enough classes that belong to the same cohort.";
+	}
+	if (gState.reasons.reasonPinsCohorts) {
+		return "The selected classes belong to different blocks. If you select specific classes, they must belong to the same block in order to produce potential schedule results.";
+	}
+	if (gState.reasons.reasonCohorts) {
+		return "There are non-conflicting schedule results, but none of these follow the allowed course block patterns. To find the conflict, toggle on/off courses that do not belong to a block.";
+	}
+
+	var f=gState.filters;
+	if (f.hideOnline && f.hideOnCampus && !offCampusFilter) {
+		return i8n.tipUncheckOnlineOnCampusClasses;
+	}
+	if (f.hideNoHonors && f.hideHonors) {
+		return i8n.bothHonorsNHonors;
+	}
+
+	var hasDropWith = function(prefix) {
+		for(var i=0;i<gState.cnfs.length;i++) {
+			if (gState.cnfs[i].drop.indexOf(prefix)==0) return true;
+		}
+		return false;
+	}
+
+	if (f.hideOnline && hasDropWith("oo")) {
+		return i8n.tipCheckOnlineClassesOnly;
+	}
+	if (f.hideOnCampus && hasDropWith("ld")) {
+		return i8n.tipLearnOnDemandClassesOnly;
+	}
+	if (f.hideOnCampus && hasDropWith("oc")) {
+		return i8n.tipOnCampusClassesOnly;
+	}
+	if (f.hideFull) {
+		for(var i=0;i<gState.cnfs.length;i++) {
+			if (gState.cnfs[i].cnPro.allFilterPassFull) {
+				return fullFilter?i8n.tipAllFull:i8n.tipAllFullNoChange;
+			}
+		}
+	}
+	if (f.hideNoHonors) {
+		return i8n.noMoreHonors;
+	}
+	if (f.hideOffCampus) {
+		return i8n.tipOffCampus;
+	}
+	var nbPins=gState.nbOfTryPins();
+	if (nbPins>0) {
+		var s="";
+		if (nbPins==1) {
+			s+=i8n.pinnedDownClass;
+		} else {
+			s+=i8n.youPinnedDown + nbPins + i8n.classesThatAre;
+		}
+		// FIXME this could be done better
+		if (gState.reasons.reasonPins) {
+			s+=i8n.overlappingTimes
+		} else if (f.hideFull) {
+			if (f.hideOnline) {
+				s+=i8n.fullOrOnline;
+			} else if (f.hideOnCampus) {
+				s+=i8n.fullOrOnCampus;
+			} else {
+				s+=i8n.fullClosed;
+			}
+		} else {
+			if (f.hideOnline) {
+				s+=i8n.probablyOnline;
+			} else if (f.hideOnCampus) {
+				s+=i8n.probablyOnCampus;
+			} else {
+				s+=(nbPins==1?i8n.notPassing:i8n.notAllPassing);
+			}
+		}
+		s+= i8n.changeSheduleFilter+ " <span>"+i8n.removethepins+"</span>";
+		return s;
+	}
+	for(var i=0;i<gState.cnfs.length;i++) {
+		var cnf=gState.cnfs[i];
+		var tots=cnf.computeTotals();
+		if (tots.tselsPUT<1) {
+			return "One or more courses have no applicable classes.<br/>Fix the issue, toggle off, or remove the offending course(s) to get results.";
+		}
+		if (!cnf.anyPostPass) {
+			return "One or more courses have no applicable classes for the classes you are including.<br/>Try adjusting the filter to include schedules containing more types of classes.";
+		}
+	}
+	if (gState.results.length>0 && gState.sortedFilteredResults.length==0) {
+		// Sorted out result(s) after generation
+		if (gState.reasons.reasonCoreqs) {
+			return "All schedule results contain unmet co-requisites. Please select the needed co-requisite courses to generate valid schedule results."; 
+		}
+	}
+	if (gState.sortedFilteredResults.length == 0 && 
+			BB.activeState.cnfs.length > 0) {
+		if (gState.reasons.reasonCoreqs) {
+			return "The selected classes selected have corequisites on other classes. The other classes need to be included to generate valid schedule results.";
+		}
+		return i8n.tipCourseConflict; 
+	}
+	
+	return "";
+}
+
+function renderResult() {
+
+	var gState=BB.activeState;
+
+	var nb=BB.activeState.sortedFilteredResults.length;
+	if (nb==1 && BB.activeState.sortedFilteredResults[0].id==null) nb=0; // workaround
+	$(".pause_found").html(i8n.s("schedulesFound",(nb==1?"":"s")));
+	$(".reg_row2").show();
+	if (BB.r<0 || BB.r>=nb) {
+		BB.r=0;
+	}
+
+	if (gState.term=="0" || gState.cnfs.length==0) nb=0;
+	var dnb=nb;
+	if (nb>=100000) {
+		dnb=Math.floor(nb/1000)+"K";
+		if (gState.tracker.tooMany) {
+			dnb+=" <img src='images/exclamation2.png' alt='exclamation' style='width:18px' title='"+i8n.tooManyCombinations+"'/>";
+		}
+	}
+	$(".pause_view_results").toggle(nb>0);
+	// TODO JAWS alert the number of results
+	var noCnfs=gState.cnfs.length<=0;
+	if (BB.welcome==8 && !noCnfs) {
+		BB.welcome=9;
+		PAGES.renderCurrentPage();
+	}
+	$(".pause_results_tip").toggle(noCnfs);
+	$(".pause_found").toggle(!noCnfs);
+	updateResultScheduleDisplay({ current: (nb==0?0:BB.r+1), total: nb });
+	
+	var result=gState.sortedFilteredResults[BB.r];
+	
+	if (!result) {
+		result=new Result(null);
+	}
+	
+	var bcd=null;
+	var bcdType="Block";
+	for (var selPro of result.selPros) {
+		var uco=selPro.uselPro.ucos?selPro.uselPro.ucos[result.cohort]:null;
+		if (uco) {
+			bcd=uco.dn;
+			bcdType=MM.cohortGroups[uco.group].dn;
+		}
+	}
+	if (bcd!=null) {
+		var ip=bcd.indexOf(":");
+		if (ip>0) bcd=bcd.substring(ip+1);
+	}
+	$(".cohort_info").text((result.cohort?(bcdType+" "+bcd):""));
+
+	if (legend==null) {
+		legend = new Legend(".legend_box");
+	}
+	if (schedule==null) {
+		schedule = new Schedule(".reg_schedule1",true,true,true,true,true);
+	}
+	if (schedule2==null) {
+		schedule2 = new Schedule(".reg_schedule2",true,true,true,false,true);
+	}
+	var dualSchedule=false;
+
+	if (gState.outdated) {
+		var dDivide=false;
+		var d1=0;
+		var d2=0;
+		if (gState.term!=0) {
+			var term=EE.terms[gState.term];
+			d1=term.d1;
+			d2=term.d2;
+		}
+		var ymd1=new YearMonthDay(d1);
+		var ymd2=new YearMonthDay(d2);
+		if (ymd1.y!=ymd2.y && allowDualSchedule) {
+			// Test if we need two:
+			var nextYear=ymd1.y+1;
+			var c=yearMonthDayToCode(nextYear,0,1);
+			dDivide=c;
+			var stuff1=schedule2.setSize(gState.cnfs,dDivide);
+			if (stuff1 || dualScheduleAlwaysIfMultiYear) {
+				dDivide--; // last Day of year
+				var stuff2=schedule.setSize(gState.cnfs,dDivide);
+				if (stuff2 || dualScheduleAlwaysIfMultiYear) {
+					dualSchedule=true;
+				}
+			}
+		}
+
+		if (!dualSchedule) {
+			schedule.setSize(gState.cnfs,0)
+		}
+
+		if (dualSchedule) {
+			$(".reg_schedule").addClass("dual_schedule");
+			$(".reg_schedule2").show().addClass("using");
+		} else {
+			$(".reg_schedule").removeClass("dual_schedule");
+			$(".reg_schedule2").hide().removeClass("using");
+		}
+		
+		$(".reg_schedule").toggle(gState.getVisibleCnfs().length>0);
+		
+		// Did any Student Groups match Course Attrs?
+		var sgMatches=0;
+		$(gState.cnfs).each(function() {
+			sgMatches+=this.cnPro.filterPassSgMatches;
+		})
+		$("#sgrating_option").toggle(sgMatches>0);
+		$("#sgratingmobile").toggle(sgMatches>0);
+	}
+
+	// The legend should be drawn after so that a couple BB vars get passed.
+	legend.draw(gState,result,gState);
+	gState.bbsOutdated=false;
+	gState.outdated=false;
+	Profiler.recordHit("scheduleFlips");
+}
+
+function updateResultScheduleDisplay(s) {
+	var _update = function(c) {
+		var a = $('a.' + c.cls);
+		var i = $('a.' + c.cls + ' > i');
+		if(c.enabled) {
+			a.attr("href", "javascript:void(0);");
+			a.attr("onclick", c.fx);
+		} else {
+			a.removeAttr("href");
+			a.removeAttr("onclick");
+		}
+		a.toggleClass("results-nava-disabled",!c.enabled);
+		i.toggleClass("results-nav-disabled",!c.enabled);
+	};
+	
+	// What is enabled
+	var higher = s.current < s.total;
+	var lower = s.current > 1;
+	$('span.results-current-schedule').html(s.current);
+	$('span.results-total-schedules').html(s.total);
+	$('span.fullscreen-results-total-schedules').html(s.total + " Schedule Result" + (s.total>1?"s":""));
+	$('.welcome-search-continue').attr('disabled',s.total == 0);		
+	
+	// Update action link state
+	_update({ enabled: lower, cls: 'results-action-first', fx: 'UU.caseFirstResult()' });
+	_update({ enabled: lower, cls: 'results-action-previous', fx: 'UU.casePrevResult()' });
+	_update({ enabled: higher, cls: 'results-action-next', fx: 'UU.caseNextResult()' });
+	_update({ enabled: higher, cls: 'results-action-last', fx: 'UU.caseLastResult()' });
+}
+
+function renderFavorites(savedFlag=false) {
+
+	if ($("#page_favorites").length<=0) {
+		return;
+	}
+
+	if (previewSchedule==null) {
+		previewSchedule = new Schedule(".preview_schedule",true,false,false,true,false);
+	}
+
+	$.getJSON("api/loadFavorites", {
+		term: BB.activeState.term
+	}, function(data) {		
+		var h="";
+		var total = data.length;
+		for (var i=0;i<total;i++) {
+			h+="<a href='javascript:void(0)' tabindex='0' id=\"thumbtest1_"+i+"\" title='"+data[i].name+" (favorite "+((i+1)+' of '+total)+")' class=\"thumbContainer\"><div class=\"thumbnail_mask\" id=\"delete_btn"+i+"\"></div><canvas class=\"thumbnail\" id=\"thumbtest_"+i+"\" width=\"100\" height=\"100\"></canvas></a>";
+		}
+		if (total==0) {
+			var tn=EE.terms[BB.activeState.term];
+			var tn2="any term";
+			if (!(!tn)) {
+				tn2=EE.terms[BB.activeState.term].name;
+			}
+			h+="<div class='no_favs_notice'>"+i8n.s("noFavsFor",tn2)+"</div>";
+		}
+		$(".thumbnail_window").html(h);
+		$("#favCount").text("("+total+")");
+
+		function scopepreserver3(savedItem,id,i) {
+
+			return function() {
+				$('.thumbContainer.active').removeClass('active');
+				$('#thumbtest_'+i).parent().addClass('active');
+				BB.previewState = new GState(savedItem.state);
+				BB.previewState.saveId=id;
+				BB.previewState.process(function() {
+					$('.load_button').prop("disabled", false);
+					$('.delete_button').prop("disabled", false);
+					$(".preview_schedule").show();
+					$(".preview_message").hide();
+					$(".fav_title_edit").show();
+					$("#editable_text").text(savedItem.name);
+					var fav_time = new Date(savedItem.time_created);
+					$("#fav-date-time1").text(fav_time.toLocaleTimeString("en-us", {
+					    year: "numeric", month: "short",
+					    day: "numeric", hour: "2-digit", minute: "2-digit"
+					}));
+				});
+			}
+		}
+
+		function deleteButtonEvent(id){
+			return function (e){
+				e.stopPropagation();
+				UU.caseDeleteFavorite(id);
+			}
+		}
+
+		var found=false;
+		for (var i=0;i<data.length;i++) {
+			var savedItem=data[i];
+
+			var overtext="";
+			
+			var termOfFav=CC.paramOfStr(savedItem.state,"term",0);
+			if (!EE.terms[termOfFav]) {
+				overtext="EXPIRED";
+			}
+			
+			drawThumbnail(savedItem.time_blocks,"thumbtest_"+i,overtext, savedItem.name);
+			$("#delete_btn"+i).click(deleteButtonEvent(savedItem.id));
+			var $tt=$("#thumbtest1_"+i);
+			$tt.on('click',scopepreserver3(savedItem,savedItem.id,i));
+			if (BB.previewState!=null && savedItem.id==BB.previewState.saveId) {
+				found=true;
+				var f=scopepreserver3(savedItem,savedItem.id,i);
+				f();
+			}
+			
+			// Load Validations
+			vaMap = Object.assign(vaMap, savedItem.validations);
+		}
+		if (!found) {
+			// Favorite was deleted
+			BB.previewState=null;
+			clearIfNull();
+		}
+		if($(".thumbnail_window > .thumbContainer.active").length == 0 && savedFlag){
+			$(".thumbnail_window > .thumbContainer").last().click();
+		}
+		
+	});
+
+	function clearIfNull() {
+		$(".preview_schedule").toggle(BB.previewState!=null);
+		if (BB.previewState==null) {
+			$(".preview_message").show();
+			$(".fav_title_edit").hide();
+			$('.load_button').prop("disabled", "disabled");
+			$('.delete_button').prop("disabled", "disabled");
+			previewSchedule.setSize([]);
+			previewSchedule.draw(new Result(),BB.previewState);
+		}
+	}
+
+	clearIfNull();
+}
+
+function avoidChange(event) {
+	var keyID;
+	if (window.event) {
+		keyID=window.event.keyCode;
+	}
+	else {
+		keyID=event.which;
+	}
+	// Don't allow user to
+	// change dropdown with left/right
+	if (keyID==39 || keyID==37) {
+		return false;
+	}
+	return true;
+}
+
+function selectMore(el) {
+	var $courseDiv=$(el).parents(".courseDiv");
+	$courseDiv.find(".stopMessageDiv").slideToggle(300);
+}
+
+
+var PAGES = (function() {
+
+	var my = {};
+	var pages=[];
+	var fullSize=null;
+	var regPage=null; // page last used in regular mode
+	var hideWelcome=null;
+	var isWider=false;
+	var fading=false;
+	var lastPage=null;
+	var lastWelcome=null;
+	pages.push(new Page("criteria",1.2,true));
+	pages.push(new Page("results",2.2,true));
+	pages.push(new Page("favorites",0.8,false));
+
+	if (fullPageWelcome && window.location.href.indexOf("&term=")<0) {
+		pages[0].expanded=false;
+	}
+
+	function Page(name,demand,expanded) {
+		this.name=name;
+		this.demand=demand;
+		this.expanded=expanded;
+		this.targetPercent=null;
+	}
+
+	my.isCriteriaOpen = function() {
+		return pages[0].expanded;
+	}
+
+	my.openFavorites = function() {
+		pages[2].expanded=true;
+		transition(true);
+	}
+	
+	my.safariSettle = function() {
+		my.settleWindow();
+	}
+
+	my.settleWindow = function() {
+		var w=$(".check_media").width();
+		if (w<1200 && (BB.wideScreen || BB.wideScreen==null)) {
+			// Go from wide-screen to regular
+			BB.wideScreen=false;
+			$(".vsb_page").css("width","auto");
+			$(".page_fader").hide();
+
+			$(".full_page_content").css({opacity:1,width:"auto"});
+			if (regPage!=null && BB.page!=regPage) {
+				BB.page=regPage;
+				regPage=null;
+				PAGES.renderCurrentPage();
+			}
+		} else if (w>=1200) {
+			// Wide screen width changed
+			if (!BB.wideScreen || BB.wideScreen==null) {
+				// Go from regular to wide-screen
+				regPage=BB.page;
+				BB.page="results";
+				BB.wideScreen=true;
+			}
+			PAGES.renderCurrentPage();
+			transition(false)
+		}
+
+		if (BB.enrollMode) {
+			my.settleCheckout();
+		}
+
+		applyWider();
+		my.settleRecommendationsList();
+	}
+	
+	my.settleRecommendationsList = function() {
+		// Resize List of Recommendations to
+		// make use of available vertical space
+		if ($(".tabtab_rec.selected").length>0) {		
+			var h1=$(".rec_results_top").offset().top;
+			var h2=$(".fav-bottom").offset().top;
+			var h3=$(window).height()+$(window).scrollTop();
+			var hmin=(h3<h2?h3:h2);
+			var hr=hmin-h1-80;
+			//if (hr>380) hr=510;
+			$(".rec_results").css("height",hr+"px");
+		}
+	}
+
+	function applyWider() {
+		var $tw=$(".weekTimes");
+		var tw=$tw.first().width();
+		if (tw>400 && !isWider) {
+			isWider=true;
+			$tw.addClass("wider");
+		} else if (isWider) {
+			isWider=false;
+			$tw.removeClass("wider");
+		}
+	}
+
+	my.settleCheckout = function() {
+		var maxWidth=100;
+		var $hs=$(".course_cell_legend");
+		$hs.each(function() {
+			$(this).css("min-width","inherit");
+			var w=$(this).width();
+			if (w>maxWidth) maxWidth=w;
+		});
+		var w1=$(".course_cell_action").last().width();
+		var w2=$(".course_cell_option").last().width();
+		$hs.css("min-width",maxWidth);
+		$(".course_legend_header").css("width",maxWidth);
+		$(".button_do_actions").css("left",(maxWidth)+"px").css("width",(w+10)+"px");
+		var b=4;
+		$(".course_legend_header").css("left",b+"px");
+		$(".course_action_header").css("left",(3+maxWidth+b)+"px");
+		$(".course_option_header").css("left",(3+maxWidth+3*b+w1)+"px");
+		$(".course_result_header").css("left",(3+maxWidth+6*b+w1+w2)+"px");
+
+		var w=$(".check_media").width();
+
+		if (w<=680 && $(".validate_mode").length==0) {
+			$(".course_box").each(function() {
+				var $h1=$(this).find(".course_header");
+				var $h2=$(this).find(".course_cell_action");
+				var h1=$h1.outerHeight();
+				var h2=$h2.outerHeight();
+				if (h1<h2) $h1.css("min-height",h2);
+				if (h2<h1) $h2.css("min-height",h1);
+			});
+		}
+	}
+
+	function updateTitles(page) {
+		var titles =[
+					 "Expand the Select Courses region",
+					"Collapse the Select Courses region",
+					"Expand the Favorites region",
+					"Collapse the Favorites region"];
+		var link = $("#page_"+page.name+"_expander");
+		if(page.name == 'criteria'){
+			 if(page.expanded){
+				 link.attr('title',titles[1]);
+			 }else {
+				 link.attr('title',titles[0]);
+			 }
+		}
+		if(page.name == 'favorites'){
+			 if(page.expanded){
+				 link.attr('title',titles[3]);
+			 }else {
+				 link.attr('title',titles[2]);
+			 }
+		}
+	}
+
+	var lastWidth=$(".check_media").width();
+	function replaceLegend() {
+		var newWidth = $(".check_media").width();			
+		if (lastWidth<=680 && newWidth>680 || BB.enrollMode) {
+			var legendElement=$(".reg_legend");
+			legendElement.remove();
+			$(".reg_legend-container.desktop").append(legendElement);
+		} else if (lastWidth>680 && newWidth<=680) {
+			var legendElement=$(".reg_legend");
+			legendElement.remove();
+			$(".reg_legend-container.mobile").append(legendElement);
+	    }
+		lastWidth=newWidth;
+	}
+
+	my.checkLegend = function() {
+		lastWidth=9999999;
+		replaceLegend();
+	}
+
+	my.initPages = function() {
+
+		function scopepreserver(page) {
+			return function() {
+				if (page.expanded) {
+					var pagesOpen=0;
+					for (var i=0;i<pages.length;i++) {
+						pagesOpen+=pages[i].expanded?1:0;
+					}
+					if (pagesOpen>1) {
+						page.expanded=!page.expanded;
+						transition(true);
+					} else {
+						// Don't collapse the last page
+					}
+				} else {
+					page.expanded=!page.expanded;
+					transition(true);
+				}
+				updateTitles(page);
+			}
+		}
+
+		for (var i=0;i<pages.length;i++) {
+			var page=pages[i];
+			var fun=scopepreserver(page);
+			$("#page_"+page.name+"_expander").click(fun);
+		}
+
+		$(window).resize(function() {
+			my.settleWindow();
+			replaceLegend();
+		});
+		
+		$(window).scroll(function() {
+			my.settleRecommendationsList();
+		});
+	}
+
+	function transition(animate) {
+
+		var width=$("#under_header").width();
+		var collW=$("#page_results .full_page_title").outerHeight();
+		if (collW<20) collW=20;
+		var collapsePerc=100*collW/width;
+		//$('.page_fader').css("max-width", width / 100 * collapsePerc);
+		var totalDemand=0;
+		var totalCollapsePerc=0;
+		for (var i=0;i<pages.length;i++) {
+			var page=pages[i];
+			if (page.expanded) {
+				totalDemand+=page.demand;
+			} else {
+				totalCollapsePerc+=collapsePerc;
+			}
+		}
+		var percLeft=100-totalCollapsePerc;
+		for (var i=0;i<pages.length;i++) {
+			var page=pages[i];
+			var newP;
+			if (page.expanded) {
+				newP=percLeft*page.demand/totalDemand;
+			} else {
+				newP=collapsePerc;
+				// Lock width of collapsing
+				var $t=$("#page_"+page.name+" .full_page_content:visible");
+				var tw=$t.width();
+				$t.css("position","absolute");
+				if (page.name=="criteria") {
+					$t.css("right","0");
+				}
+				$t.css("width",tw+"px");
+			}
+			page.targetPercent=newP-0.05; // buffer to prevent wrapping
+		}
+
+		var speed=250;
+		
+		// Animate to new percent widths (collapse first)
+		for (var i=0;i<pages.length;i++) {
+			var page=pages[i];
+			if (page.expanded) continue;
+			var $p=$("#page_"+page.name);
+			var $c=$p.find(".full_page_content");
+			var $f=$p.find(".page_fader").show();
+			var bg1=$p.find(".page_fader").css("backgroundColor");  // no-flicker
+			$("#page_"+page.name+"_expander").addClass("collapsed");
+			updateTitles(page);
+			$f.animate({opacity:1},{duration:(animate?speed*3:0),easing:"swing",queue:true});
+			$c.animate({opacity:0},{duration:(animate?speed:0),easing:"swing",queue:true});
+			$p.animate({width:(page.targetPercent+"%")},{duration:(animate?speed:0),easing:"swing",queue:true,complete:function() {
+				var bg=$(this).find(".page_fader").css("backgroundColor");
+				$(this).find(".full_page_title").addClass("collapsed").css("backgroundColor",bg);
+				$(this).find(".full_page_content").addClass("invisible_widescreen"); // prevent JAWS from reading it
+			}});
+		}
+
+
+		// Animate to new percent widths
+		for (var i=0;i<pages.length;i++) {
+			var page=pages[i];
+			if (!page.expanded) {continue};
+			var $p=$("#page_"+page.name);
+			$("#page_"+page.name+"_expander").removeClass("collapsed");
+			updateTitles(page);
+			var $c=$p.find(".full_page_content");
+			$p.find(".full_page_title").css("backgroundColor","");
+			var $f=$p.find(".page_fader");
+			$p.find(".full_page_title").removeClass("collapsed");
+			$f.animate({opacity:0},{duration:(animate?speed/2:0),easing:"swing",queue:true,complete:function () {
+				$(this).hide();
+			}});
+			$c.animate({opacity:1},{duration:(animate?speed:0),easing:"swing",queue:true});
+			$p.find(".full_page_content").removeClass("invisible_widescreen");
+			
+			var cw=$p.width();
+			var cperc=100*cw/width;
+			var grow = function(page,$p,cperc) {
+				return function() {
+					$({xyz:cperc}).animate({xyz:page.targetPercent},{duration:(animate?speed:0),easing:"swing",queue:true,complete:function() {
+						// Unlock widths
+						$p.find(".full_page_content").css("width","auto").css("position","relative");
+						applyWider();
+					}, step: function(now) {
+						$p.css("width",now+"%");
+					}});
+				}
+			}
+			grow(page,$p,cperc)();
+		}
+	}
+
+	my.filterRecommendations = function(term) {
+		//console.log("filterRecommendations START term: "+term);
+		if (term) {
+			$("#suggestedResult > *").addClass("hidden");
+			$("#suggestedResult > *[data-term-code='"+term+"']").removeClass("hidden");
+		} else {
+			$("#suggestedResult > *").removeClass("hidden");
+		}
+		var info=my.displayedRecsInfo()
+		var hasCompulsory=info.nbCompulsory > 0;
+		$(".reg_recommendation").toggleClass("mandatory-rec", hasCompulsory);
+		//console.log("filterRecommendations END ");
+		return info;
+	}
+	
+	my.displayedRecsInfo = function() {
+		//console.log("displayedRecsInfo START");
+		var nbRecs = $("#suggestedResult > *:not(.hidden)").length;
+		var nbCompulsory = $("#suggestedResult > *:not(.hidden)").filter("[data-compulsory='true']").length;
+		//console.log("nbRecs: "+nbRecs+", nbCompulsory: "+nbCompulsory);
+		//console.log("displayedRecsInfo END");
+		return {nbRecs:nbRecs,nbCompulsory:nbCompulsory};
+	}
+	
+	my.renderCurrentPage = function(quick) {
+		
+		var speed=250;
+		
+		function getDivs(welcome) {
+			if (welcome==2 || welcome==8) return $(".reg_welcome");
+			if (welcome==3) return $(".reg_term");
+			if (welcome==4) return $(".reg_recommendation");
+			if (welcome==9) return $(".reg_parent");
+			return null;
+		}
+		
+		if (BB.welcome!=lastWelcome) {
+		
+			var $old=getDivs(lastWelcome);
+			lastWelcome=BB.welcome;
+			var $new=getDivs(BB.welcome);
+			
+			var showNew = function() {
+				if (BB.welcome<8) {
+					$("#page_criteria").attr("aria-hidden", "true");
+				} else {
+					$("#page_criteria").removeAttr("aria-hidden");
+				}
+				$("body").toggleClass("welcome",BB.welcome<8);
+				if (BB.welcome<8) {
+					$(".disable-welcome").attr("disabled", true);
+				} else {
+					$(".disable-welcome").not(".dont-enable").attr("disabled", false);
+				}
+				$("body").toggleClass("welcome-passive",BB.welcome==8);
+				if (quick) {
+					$new.stop().show()
+				} else {
+					$new.stop().fadeIn(speed);
+				}
+			}
+			
+			if (quick) {
+				$old.stop().hide();
+				showNew();
+			} else {
+				if ($old) {
+					$old.stop().fadeOut(speed,function() {
+						showNew();
+					})
+				} else {
+					showNew();
+				}
+			}
+		}
+
+		if (BB.page!=lastPage) {
+			lastPage=BB.page;
+
+			if (BB.page=="criteria") {
+				if (fullPageWelcome && BB.welcome==9) {
+					$("#page_criteria_expander.collapsed").click();
+				}
+			}
+
+			$(".vsb_page").removeClass("active_vsb_page");
+			$("#page_"+BB.page).addClass("active_vsb_page").find(".full_page_content").css("position","relative");
+
+			$(".nav_link").removeClass("navselected");
+			if (BB.welcome>=8) $(".link_"+BB.page).addClass("navselected");
+
+			$(".link_criteria").prop("title",BB.page=="criteria"?i8n.currentlyOnCriteriaPage:i8n.gotoCriteriaPage);
+			$(".link_results").prop("title",BB.page=="results"?i8n.currentlyOnResultsPage:i8n.gotoResultsPage);
+			$(".link_favorites").prop("title",BB.page=="favorites"?i8n.currentlyOnFavoritesPage:i8n.gotoFavoritesPage);
+
+			if (BB.page=="criteria") {
+				// Increase tip by 1 if not first time.
+				SLIDER.showNewTip();
+
+				// mobile search course field focus issue
+				//if(!$e("code_number").disabled && !BB.access) {
+				//	$e("code_number").focus();
+				//}
+			}
+
+		}
+
+	}
+	
+	return my;
+
+}());
+
+
+function getMonth(e){switch(e){case 0:return i8n.jan;case 1:return i8n.feb;case 2:return i8n.mar;case 3:return i8n.apr;
+case 4:return i8n.may;case 5:return i8n.jun;case 6:return i8n.jul;case 7:return i8n.aug;case 8:return i8n.sep;
+case 9:return i8n.oct;case 10:return i8n.nov;case 11:return i8n.dec;}}
+
+function getMonth2(e){switch(e){case 0:return i8n.jan2;case 1:return i8n.feb2;case 2:return i8n.mar2;case 3:return i8n.apr2;
+case 4:return i8n.may2;case 5:return i8n.jun2;case 6:return i8n.jul2;case 7:return i8n.aug2;case 8:return i8n.sep2;
+case 9:return i8n.oct2;case 10:return i8n.nov2;case 11:return i8n.dec2;}}
+
+
+function getDay(e){
+	switch(e){
+	case 1:return i8n.sun;
+	case 2:return i8n.mon;
+	case 3:return i8n.tue;
+	case 4:return i8n.wed;
+	case 5:return i8n.thu;
+	case 6:return i8n.fri;
+	case 7:return i8n.sat;
+	}
+	return e;
+}
+
+function getDay2(e){
+	switch(e){
+	case 1:return i8n.sun2;
+	case 2:return i8n.mon2;
+	case 3:return i8n.tue2;
+	case 4:return i8n.wed2;
+	case 5:return i8n.thu2;
+	case 6:return i8n.fri2;
+	case 7:return i8n.sat2;
+	}
+	return e;
+}
+
+
+var MENU = (function() {
+
+	var my={};
+	var $mm;
+
+	function applyAuthState() {
+		$(".sign_in_button,.mi_sign_in").toggle(!authenticated);
+
+		$(".mi_sign_out").toggle(authenticated);
+		$mm.find(".mi_analytics").toggle(analyticsAccess);
+		$mm.find(".mi_scheduler").toggle(isScheduler);
+		$mm.find(".mi_settings").toggle(isConfigurator);
+
+		$(".main_menu .mi_behalf").toggle(isAdvisor && advisee==null);
+		$(".main_menu .mi_behalf_change").toggle(advisee!=null);
+		$(".main_menu .behalf_student").text(advisee);
+	}
+
+	my.menuFunction = function() {
+		// Make it visible (invisible is handled by document.onclick handler)
+		if ($(".main_menu:visible").length==0) {
+			setTimeout(function() {
+				$(".main_menu").fadeToggle(230);
+			}, 40);
+		}
+	}
+	
+	function setupAdvise(instance) {
+		var instance = $(instance);
+		
+		instance.find(".mi_behalf").click(function() {
+			$(this).slideUp();
+			instance.find(".mi_behalf_start").slideDown();
+			instance.find(".behalf_userid")[0].selectize.focus();
+		});
+
+		instance.find(".behalf_userid").on("keyup",function(e) {
+			if (e.keyCode==13) {
+				instance.find(".behalf_start_button").click();
+			}
+		});
+
+		instance.find(".behalf_cancel_button").click(function() {
+			instance.find(".mi_behalf_start").slideUp();
+			instance.find(".mi_message_box").slideUp();
+			if (advisee==null) {
+				instance.find(".mi_behalf").slideDown();
+			} else {
+				instance.find(".mi_behalf_change").slideDown();
+			}
+		});
+
+		instance.find(".switch_student_button").click(function() {
+			instance.find(".mi_behalf_change").slideUp();
+			instance.find(".mi_behalf_start").slideDown();
+		});
+
+		instance.find(".stop_advising_button").click(function() {
+			Profiler.reportToServer(function() {
+				$.getJSON("api/stopAdvising",function(data) {				
+					clearSearch(false);
+				});				
+			});
+		});
+		
+		instance.find(".behalf_start_button").click(function() {
+			var userid=instance.find(".behalf_userid").val();
+			UU.caseStartAdvising(userid,false);
+		});
+		
+		if (isAdvisor) {
+			  var uselz= instance.find(".behalf_userid").selectize({
+			    delimiter: '',	// Tab also works
+			    plugins: {'remove_button':{}, 'enter_key_submit':{},'no_results':{message:'No term-activated students match'}},
+			    onInitialize: function () {
+			      this.on('submit', function () {
+			    	  instance.find('.behalf_start_button').click();
+			      }, this);
+			    },
+			    persist: false,
+			    create: !recommendKnownUserOnly, // Note: If create=true it can hide no_results from working
+			    openOnFocus: false,
+			    onItemAdd: function (input, $item) {
+					var studentsSelectize = instance.find(".behalf_userid")[0].selectize;
+					studentsSelectize.close();
+
+					if (input.indexOf("{") == 0) {
+						input=JSON.parse(input).id
+					}
+			    },
+			    score: function() { return function() { return 1; }; },
+				onType: function(value) {
+					$.ajax(
+					{
+						url: "api/v2/system-users?prefix=" + value,
+						type : "get",
+						success: function(data){
+							var studentsSelectize = instance.find(".behalf_userid")[0].selectize;
+							studentsSelectize.clearOptions();
+							studentsSelectize.renderCache = {}
+
+							data.users.forEach(function(t){
+								studentsSelectize.addOption({
+									text:t.name + " " + t.id,
+									value: t.id,
+									user:t
+								});
+							});
+							
+							if (data.systemUserRepositoryStatus) {
+								studentsSelectize.refreshOptions(data.systemUserRepositoryStatus);
+							} else {
+								studentsSelectize.refreshOptions();
+							}
+						}
+					});
+				},
+				render: {
+				    option_create: function(data, escape) {
+				        return '<div class="create"><strong>' + escape(data.input) + '</strong>&hellip;</div>';
+				    },
+					option: function(data, escape) {
+						return '<div class="student-suggestion">' +
+								'<div class="student-name">' + escape(data.user.name) + '</div>' +
+								'<div class="student-id">'  + escape(data.user.id) + '</div>' +
+							'</div>';
+					}}
+			  });
+			}
+	}
+	
+	my.initMenu = function() {
+		$mm = $(".main_menu");
+		$(".main_menu_button,.alt_main_menu_button").click(my.menuFunction);
+
+		setupAdvise(".main_menu");
+		
+		// Set up extra links
+		for (var el of extraLinks) {
+			if (el.placement&&!el.placement.some(f=>f=="menu")) continue;
+			var icon=el.icon?el.icon:"fa-external-link";
+			$("#extraLinks_menu").append("<div class='menu-item-separator'>");
+			$("#extraLinks_menu").append("<a href='"+el.href+"'"+(el.target?(" target='"+el.target+"'"):"")+"'><i class='fa fa-lg "+icon+"' aria-hidden='true' style='padding-right: 6px;'></i> "+el.name+"</a>");
+		}
+		
+		applyAuthState();
+	}
+
+	return my;
+
+}());

@@ -1,0 +1,520 @@
+"use strict";
+
+// id = elementId of div to insert multiselect into
+// param = Object of optional parameters
+// items = Array of MultiselectItems
+// callback = optional function that is called when an items checked state has changed.
+function Multiselect(id,param,items,callback, linkClass) {
+	
+	// Initialize Options
+	linkClass = linkClass ? linkClass : "";
+	this.oP=param?param:{};
+	this.items=items;
+	
+	var type=param.textListTitle.replace(":","").toLowerCase();
+	
+	var k, def = {showSelectLink:true, showList:true, showBox:true, textAll: i8n.all, textNone: i8n.none,
+			textListTitle: i8n.list, showSelectAllNone: true, showCloseButton: true,
+			boxExpandedByDefault: false,
+			textSelectShow: i8n.select, textSelectShowAria: "Expand "+type+" filter",
+			textSelectHide: i8n.select, textSelectHideAria: "Collapse "+type+" filter",
+		 	textSelectAll: i8n.selectAll, textSelectAllAria: "Select all "+type,
+			textSelectNone: i8n.selectNone, textSelectNoneAria: "Deselect all "+type,
+			textClose:i8n.close, textCloseTitle: "Collapse "+type+" filter",
+			textNoneVisible: i8n.noneVisible,
+			columns: 3, maxInList: 10, conserveCount: 100, disableCount: 200};
+			
+	for (k in def) {
+		if (typeof(this.oP[k])!=typeof(def[k])) {
+			this.oP[k] = def[k];
+		}
+	}
+	
+	var oP=this.oP;
+	
+	var $ms=$("#"+id);
+	if ($ms.length<1) {
+		alert("id of '"+id+"' not found");
+	}
+	this.$ms=$ms;
+	
+	var isLocationSelCategory = false;
+	if(id == 'locationSelector' && locationCategory.length > 0){
+		isLocationSelCategory = true;
+	}
+	
+	
+	// Define functions
+	
+	// Get column (starting at zero) for given item index.
+	this.getCol = function(index,total) {
+		if (total==0) return 0;
+		if (index>=total) return 0;
+		var cols=this.oP.columns;
+		//var spots=total+(cols-total%cols);
+		var spots=Math.ceil(total/cols)*cols;
+		var col=Math.ceil((index+1)*cols/spots);
+		return col-1;
+		
+	}
+	
+	// When conserve is true, not shown items will not be in the DOM.
+	this.conserve=false;
+	
+	this.updateDisplay = function() {
+		var $boxCont=$ms.find(".msBoxCont");
+		$boxCont.find(".boxcol").empty();
+		var $mslistitemstart=$ms.find(".mslistitemstart");
+		var $temp=$ms.find(".mslistitem");
+		$temp.remove();
+		
+		var allShownItemsChecked=true;
+		var allShownItemsNotChecked=true;
+		var nbShown=0;
+		var nbChecked=0;
+		for (var i=0;i<items.length;i++) {
+			var item=items[i];
+			if (!item.show || (item.invisible)) continue;
+			nbShown++;
+			if (item.checked) nbChecked++;
+		}
+		if (items.length>this.oP.conserveCount) {
+			this.conserve=true;
+		}
+		
+		var lh="";
+		var colhtml=new Array();
+		var catLoc=new Array();
+		for (var c=0;c<this.oP.columns;c++) {
+			colhtml[c]="";
+		}
+		
+		if (nbShown<=this.oP.disableCount) {  
+			$ms.find(".msActBoxShow").toggle(this.oP.showSelectLink);
+			var count=0;
+			if(isLocationSelCategory){
+				var locItems=new Array();
+				var catLoc = this.getLocationByCategory();
+				Object.keys(catLoc).forEach(function (key) {
+					locItems = locItems.concat(catLoc[key]);
+				});
+				items = locItems;
+			}
+			var prevLoc = "";
+			for (var i=0;i<items.length;i++) {
+				var item=items[i];
+				
+				if (this.conserve && !item.show) continue;
+				if (item.invisible) continue;
+				
+				// Item on top
+				lh+="<div class='msItemR msitem' title='"+item.title.replace(/'/g,"&apos;")+"'><div class='msItemN'><div class='msItemT'>"+item.text+"</div><div class='msItemM' id='"+id+"List"+i+"' onclick='msSelect(\""+id+"\","+i+",false);event.stopPropagation();'></div></div></div>";
+				
+				// Item in box
+				var col=this.getCol(count,nbShown);
+				var itext=item.text;
+				if ((";"+boldMultiSelectItems+";").indexOf(";"+itext+";")>=0) {
+					itext="<strong>"+itext+"</strong>";
+				}
+				
+				var th= "<div class='msItemDiv'>";
+				if(isLocationSelCategory){
+					if(prevLoc != item.category){
+						prevLoc=item.category;
+						th+="<li class='msitem'><strong>"+(item.category!=undefined?item.category:"Uncategorized")+"</strong></li>";
+					}
+				}
+				var disabled= item.disabled;
+				
+				th+= "<li class='msitem' title='"+item.title.replace(/'/g,"&apos;")+"'>" +
+					'<label class="mdl-checkbox mdl-js-checkbox mdl-js-ripple-effect" for="'+id+"Box"+i+'" id="'+id+"Box"+i+'-label" >' +
+							'<input type="checkbox" id="'+id+"Box"+i+'"'+(item.checked?" checked='checked'":"")+(disabled?"disabled":"")+' class="mdl-checkbox__input" '+(!disabled?'onchange="msSelect(\''+id+'\', '+i+',this.checked)':'')+';">' +
+							'<span class="mdl-checkbox__label">'+itext+'</span>' +
+						'</label>' +
+						"</li></div>";
+				colhtml[col]+=th;
+				$('.bgsh').html('<label class="mdl-checkbox mdl-js-checkbox mdl-js-ripple-effect" for="collegeSelectorBox0"><input type="checkbox" id="collegeSelectorBox0ww" class="mdl-checkbox__input"><span class="mdl-checkbox__label">Checkbox</span></label>');
+				$('.bgsh').html('<button class="mdl-button mdl-js-button mdl-button--raised">abc</button>');
+				count++;
+			}
+		} else {
+			// Hide the box
+			$ms.find(".msbox").hide();
+			
+			// Prevent Select from being selectable
+			$ms.find(".msActBoxShow").hide();
+			
+			// Select every item that should be visible
+			for (var i=0;i<items.length;i++) {
+				var item=items[i];
+				if (item.show) item.checked=true;
+			}
+		}
+		
+		$mslistitemstart.parent().find(".msitem").remove();
+		$mslistitemstart.after(lh);
+		
+		
+		for (var c=0;c<colhtml.length;c++) {
+			$ms.find(".col"+c).html(colhtml[c]);
+		}
+		
+		componentHandler.upgradeDom();
+
+	}
+	
+	//prepares an object containing location list by category
+	this.getLocationByCategory = function(){
+		var obj = JSON.parse(locationCategory);
+		var catLoc = {};
+		var unknownCatArr = [];
+		for (const category in obj) {
+			var locArr = catLoc[category];
+			if(!locArr){
+				locArr = new Array();
+			}
+			var val = obj[category];
+			for (var i=0;i<this.items.length;i++) {
+				var item=this.items[i];
+				for ( var x in val) {
+					var c = val[x];
+					if(c == item.value){
+						item.category=category
+						locArr.push(item);
+						catLoc[category]=locArr;
+						break;
+					}
+				}
+			}
+		}
+		
+		return catLoc;
+	}
+	
+	this.msModelToDisplay = function(index) {
+		var items=this.$ms.data("items");
+		
+		if (this.conserve) {
+			// We must call this in case visibility of items has changed
+			this.updateDisplay();
+		}
+
+		var allShownItemsChecked=true;
+		var allShownItemsNotChecked=true;
+		var nbShown=0;
+		var nbChecked=0;
+		for (var i=0;i<items.length;i++) {
+			var item=items[i];
+			if (!item.show || (item.invisible)) {
+				continue;
+			}
+			nbShown++;
+			if (!item.checked) {
+				allShownItemsChecked=false;
+			} else {
+				nbChecked++;
+				allShownItemsNotChecked=false;
+			}
+		}
+		var tooManyChecked=(nbChecked>this.oP.maxInList?true:false);
+		
+		var $mstitle=this.$ms.find(".mstitle");
+		if (allShownItemsChecked || allShownItemsNotChecked || tooManyChecked) {
+			$mstitle.find(".msitem").hide();
+			var $none=$mstitle.find(".textNone");
+			$none.toggle((allShownItemsNotChecked || tooManyChecked) && !allShownItemsChecked);
+			if (tooManyChecked) {
+				$none.html(nbChecked+" of "+nbShown+" selected");
+			} else {
+				$none.html(this.oP.textNone);
+			}
+			var $all=$mstitle.find(".textAll");
+			$all.toggle(allShownItemsChecked && !allShownItemsNotChecked);
+			if (allShownItemsChecked) {
+				$all.html(this.oP.textAll.replace("%n",nbShown));
+			}
+			$mstitle.find(".msAll").show();
+		} else {
+			$mstitle.find(".textAll").show();
+			$mstitle.find(".msAll").hide();
+			$mstitle.find(".textNone").hide();
+		}
+		
+		if(!allShownItemsChecked) {
+			$mstitle.find(".msAll").show();
+			$mstitle.find(".textAll").html("("+nbChecked+"/"+nbShown+")");
+		}
+		
+		this.$ms.data("nbChecked",nbChecked);
+		this.$ms.find(".textnonevisible").toggle(allShownItemsChecked && allShownItemsNotChecked);
+		
+		var min=0;
+		var max=items.length;
+		if (nbShown>this.oP.disableCount) max=0;
+		//if (index!=undefined) {
+		//	min=index;
+		//	max=index+1;
+		//}
+		var itemDoms=new Array();
+		var visibleItems=0;
+		for (var i=min;i<max;i++) {
+			var item=items[i];
+			if (this.conserve && !item.show) {
+				continue;
+			}
+			if (item.invisible) continue;
+			
+			if ($("#"+id+"Box"+i+"-label")[0].MaterialCheckbox) {
+				if (item.disabled) {
+					$("#"+id+"Box"+i+"-label")[0].MaterialCheckbox.disable();
+				} else {
+					$("#"+id+"Box"+i+"-label")[0].MaterialCheckbox.enable();
+				}
+			}
+			var checked=item.checked;
+			// List
+			$("#"+id+"List"+i).parents(".msitem").css("display", "");
+			if(checked && item.show && !allShownItemsChecked && !tooManyChecked) {
+				$("#"+id+"List"+i).parents(".msitem").removeClass("hidden");
+			} else {
+				$("#"+id+"List"+i).parents(".msitem").addClass("hidden");
+			}
+			//$("#"+id+"List"+i).parents(".msitem").toggle(checked && item.show && !allShownItemsChecked && !tooManyChecked);
+			
+			// Box
+			var $cb=$("#"+id+"Box"+i+"-label");
+			if ($cb[0].MaterialCheckbox){
+				
+			if (!checked && $cb.is('.is-checked')) {
+				$cb[0].MaterialCheckbox.uncheck();
+			} else if (checked) {
+				$cb[0].MaterialCheckbox.check();
+			}
+			}
+			var $parent=$cb.parents(".msItemDiv");
+			$parent.toggle(item.show);
+			if (item.show) {
+				visibleItems++;
+			}
+			if (index==undefined) {
+				itemDoms[i]=$parent.remove();
+			}
+		}
+		
+		if (index==undefined) {
+			var visI=0;
+			var $cols=new Array();
+			for (var i=min;i<max;i++) {
+				var col=this.getCol(visI,visibleItems);
+				
+				if ($cols[i]==undefined) {
+					$cols[i]=this.$ms.find(".col"+col);
+				}
+				var $colo=$cols[i];
+				
+				$colo.append(itemDoms[i]);
+				
+				if (items[i].show && !items[i].invisible) {
+					visI++;
+				}
+			}
+		}
+	}
+	
+	
+	
+	// Regular code:
+	
+	var t="";
+	t+="<div class='mstitle'>";
+	t+="<div class='msItemR mslistitemstart'><div class='msItemNb li'><div class='msItemTb criteria_filter_title'>"+this.oP.textListTitle+"</div></div></div>";
+	t+="<div class='msAll'><div class='msItemR'><div class='msItemNb li'><div class='msItemTb'><span class='textAll'>"+this.oP.textAll+"</span><span class='textNone'>"+this.oP.textNone+"</span></div></div></div></div>";
+	t+="<div class='msItemR msSelectDot'><div class='msItemNb li'><button class='nobuttonstyle msItemTb a msActBoxShow ms_select_link "+linkClass+"'";
+	t+="title='"+(this.oP.boxExpandedByDefault?this.oP.textSelectHideAria:this.oP.textSelectShowAria)+"' aria-label='"+(this.oP.boxExpandedByDefault?this.oP.textSelectHideAria:this.oP.textSelectShowAria)+"'>";
+	t+=(this.oP.boxExpandedByDefault?this.oP.textSelectHide:this.oP.textSelectShow)+"</button></div></div>";
+	t+="<div style='clear:both'></div></div>";
+	
+	
+	
+	t+="<div class='msbox' role='group' aria-label='"+type+" options'>";
+
+	t+="<div class='msBoxCont'>";
+	
+	for (var c=0;c<this.oP.columns;c++) {
+		t+="<div class='msulwrapper wcol"+this.oP.columns+"'><ul class='boxcol col"+c+"' role='presentation'></ul></div>";
+	}
+	
+	t+="<div class='msulwrapper wcol"+this.oP.columns+" textnonevisible'>";
+	t+="<ul role='presentation'><li>"+this.oP.textNoneVisible+"</li></ul>";
+	t+="</div>";			
+	
+	t+="<div style='clear:both;'></div>";
+	
+	t+="</div>";
+
+	t+="<div class='msBoxButtons accessOffOnly'>";
+
+	t+="<div class='msSelectAllDiv'>" +
+	"<button class='mdl-button mdl-js-button' onclick='msSelect(\""+id+"\",undefined,true);' title='"+this.oP.textSelectAllAria+"' aria-label='"+this.oP.textSelectAllAria+"'>"+
+		this.oP.textSelectAll+
+	"</button> " +
+	"<button class='mdl-button mdl-js-button' onclick='msSelect(\""+id+"\",undefined,false);' title='"+this.oP.textSelectNoneAria+"' aria-label='"+this.oP.textSelectNoneAria+"'>"+
+		this.oP.textSelectNone+
+	"</button>" +
+	"</div>";
+	
+	t+="<div class='msBoxClose accessOffOnly'>";
+	t+="<button class='mdl-button mdl-js-button msActBoxClose' title='"+this.oP.textCloseTitle+"'>" +
+	this.oP.textClose +
+	"</button>";
+	t+="</div>";
+	t+="</div>";
+	
+	t+="</div>";
+	
+	$ms.html(t);
+	
+	$ms.find(".msAll").hide();
+	$ms.find(".textNone").hide();
+	$ms.find(".msbox").toggle(this.oP.boxExpandedByDefault);
+	$ms.find(".msActBoxShow").toggle(this.oP.showSelectLink);
+	//$ms.find(".msulwrapper").css("width",""+Math.floor(100/this.oP.columns)+"%");
+	
+	this.updateDisplay();
+	$ms.data("items",items);
+	$ms.data("callback",callback);
+	$ms.data("controller",this);
+	
+	
+	// Select... button:
+	$ms.find(".mstitle").click(function() {
+		var $but=$(this).find(".msActBoxShow");
+		if ($but.hasClass("disableClick")) {
+			RR.addBadWarning(i8n.chooseTerm);
+			return;
+		}
+		var $mb=$ms.find(".msbox");
+		if ($mb.is(":visible")) {
+			$but.html(oP.textSelectShow);
+			$but.attr("title",oP.textSelectShowAria);
+			$but.attr("aria-label",oP.textSelectShowAria);
+		} else {
+			BUBBLES.skipCampusStep();
+			$but.html(oP.textSelectHide);
+			$but.attr("title",oP.textSelectHideAria);
+			$but.attr("aria-label",oP.textSelectHideAria);
+		}
+		var $b=$ms.find(".msbox");
+		$b.toggle(300);
+	}).mouseenter(function() {
+		$ms.find(".msSelectDot").addClass("mouseHover");
+	}).mouseleave(function() {
+		$ms.find(".msSelectDot").removeClass("mouseHover");
+	});
+	
+	// Close button
+	$ms.find(".msActBoxClose").click(function() {
+		$ms.find(".msbox").hide(300);
+	});
+	
+	this.msModelToDisplay();
+	
+	
+}
+
+function MsiInstitution(value,text,invisible,term,institution) {
+	return new MultiselectItem(value,text,null,true,null,null,null,true,invisible,term,institution); 
+}
+
+function newMsi(value,text,invisible) {
+	return new MultiselectItem(value,text,null,true,null,null,null,true,invisible); 
+}
+
+function MultiselectItem(value,text,title,checked,onclick,obj1,obj2,show,invisible,term,institution) {
+	this.value=value;
+	this.text=text;
+	this.title=title?title:"";
+	this.checked=(checked||checked===undefined||checked==null)?true:false;
+	this.onclick=onclick?onclick:null;
+	this.obj1=obj1;
+	this.obj2=obj2;
+	this.show=show?show:true;
+	this.invisible=invisible?invisible:false;
+	this.term = term;
+	this.institution=institution;
+	this.disabled=false;
+
+	// For system use only:
+	this.oldCol=-1;
+}
+
+//User clicked on 'x' or checkbox or Select All/None
+function msSelect(id,i,checked) {
+	var $ms=$("#"+id);
+	var items=$ms.data("items");
+	var controller=$ms.data("controller");
+	
+	if (i==undefined) {
+		for (var i=0; i<items.length; i++) {
+			if (!items[i].disabled) {
+				items[i].checked=checked;
+			}
+		}		
+		if(checked) {
+			_alert("All items selected");
+		} else {
+			_alert("All items unselected");
+		}
+		controller.msModelToDisplay();
+	} else {
+		items[i].checked=checked;
+		var oneVisChecked=false;
+		for (var j=0; j<items.length; j++) {
+			var it=items[j];
+			if (it.invisible) {
+				// If even one item checked, ensure all non-visible checked.
+				if (checked) {
+					it.checked=checked;
+				}
+			} else {
+				if (it.invisible && it.checked) {
+					oneVisChecked=true;
+				}
+			}
+		}
+		if (!oneVisChecked && !checked) {
+			// Ensure all non-visible unchecked
+			for (var j=0; j<items.length; j++) {
+				var it=items[j];
+				if (it.invisible) {
+					it.checked=false;
+				}
+			}
+			
+		}
+		controller.msModelToDisplay(i);
+	}
+	
+	var cb=$ms.data("callback");
+	if (cb!=undefined) {
+		cb();
+	}
+}
+
+function msRefresh(id) {
+	var $ms=$("#"+id);
+	var controller=$ms.data("controller");
+	if (controller!=null) {
+		controller.msModelToDisplay();
+	}
+}
+
+function msExpandible(id,enabled) {
+	var $ms=$("#"+id);
+	var $act=$ms.find(".msActBoxShow");
+	if (enabled) {
+		$act.removeClass("disableClick");
+	} else {
+		$act.addClass("disableClick");
+	}
+}

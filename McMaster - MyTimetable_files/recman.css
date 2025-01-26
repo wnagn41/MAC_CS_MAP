@@ -1,0 +1,522 @@
+.switch-field-row {
+}
+
+.switch-field {
+	overflow: hidden;
+	white-space:nowrap;
+	display: flex;
+	margin: 0 0;
+	justify-content: center;
+	font-size: 14px;
+}
+
+.switch-title {
+	margin-bottom: 6px;
+}
+
+.switch-field input {
+	position: absolute !important;
+	clip: rect(0, 0, 0, 0);
+	height: 1px;
+	width: 1px;
+	border: 0;
+	overflow: hidden;
+}
+
+.switch-field label {
+	float: left;
+}
+
+.switch-field label {
+	display: inline-block;
+	color: #000000;
+	font-weight: 500;
+	text-align: center;
+	text-shadow: none;
+	padding: 6px 5px;
+	border: 1px solid #dadce0;
+	-webkit-transition: all 0.1s ease-in-out;
+	-moz-transition: all 0.1s ease-in-out;
+	-ms-transition: all 0.1s ease-in-out;
+	-o-transition: all 0.1s ease-in-out;
+	transition: all 0.1s ease-in-out;
+	/* width: 0; */
+	/* flex-grow: 1; */
+}
+
+.switch-field label:hover {
+	cursor: pointer;
+}
+
+.switch-field input:checked+label {
+	background-color: #328cc1;
+	box-shadow: none;
+	color:white;
+}
+
+.switch-field label:first-of-type {
+	border-radius: 3px 0 0 3px;
+    border-right: none;
+}
+
+.switch-field label:last-of-type {
+	border-radius: 0 3px 3px 0;
+    border-left: none;
+}
+
+#tab_recommendations {
+	width: 100%;
+	/*margin: -10px;
+	padding: 10px;*/
+}
+#page_rec_list, #page_rec_edit {
+	box-sizing: border-box;
+	position: absolute;
+	width: 100%;
+	padding: 10px;
+}
+
+.rec_only_me {
+	padding: 0 0 10px 40px;
+}
+
+.rec_show {
+	float: left;
+	width: 40px;
+	padding-top: 7px;
+}
+
+.rec_container {
+	overflow: hidden;
+	height: auto;
+	position: relative;
+	padding: 0 0 10px 0;
+}
+
+.rec_magnifier {
+	float: left;
+	width: 26px;
+	font-size: 22px;
+}
+
+.rec_search {
+	margin: 8px 0 10px 0;
+}
+
+#rec_search_input {
+	font-size: 120%;
+}
+div.rec_search label {
+	font-size: 120%;
+}
+
+.rec_search_highlight {
+	opacity: .6;
+	margin-top: 12px;
+}
+
+.rec_search_highlight em {
+	font-weight: bold;
+	opacity: 1;
+}
+
+.rec_search_highlight_title {
+	font-size:.8em;
+}
+
+.rec_results_count {
+	opacity: .6;
+	font-size:.8em;
+}
+
+.rec_results {
+	overflow-y: auto;
+	height: 400px;
+}
+
+.rec_result {
+	margin-top: 6px;
+	padding: 6px;
+	background-color: #e4e4e4;
+	border-radius: 3px;
+	overflow: hidden;
+	position: relative;
+	cursor: pointer;
+}
+
+.rec_result:hover {
+	background-color: #c7c7c7;
+	transition: all 0.3s;
+}
+
+.rec_icon {
+	float: left;
+    font-size: 30px;
+    margin: 0 10px 3px 4px;
+    color: gray;
+}
+
+.rec_info {
+	float: right;
+}
+
+.rec_result_details {
+	overflow: hidden;
+	width: auto;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.rec_info_item {
+	float: right;
+	clear: right;
+}
+
+.rec_detail_item {
+	float: left;
+	clear: left;
+}
+
+.rec-bot-tools {
+    text-align: right;
+    box-sizing: border-box;
+    padding: 10px 0;
+}
+
+.rec-top-btn {
+  width: 40px;
+}
+
+.top-rt-btns {
+  float: right;
+}
+
+.back-btn {
+  float: left;
+}
+
+.rec-header {
+  margin: 4px 0 0 0;
+  font-size: 150%;
+  font-weight: normal;
+}
+
+.rec-tbl-cont {
+  position: relative;
+}
+
+.rec-row {
+  position: relative;
+}
+.rec-row-users {
+	display: flex;
+    margin-top: 6px;
+}
+
+.rec-row-label {
+	margin: 12px 0 3px 0;
+}
+.rec-label {
+	font-weight: bold;
+    color: #565656;
+}
+
+.rec-row-desc {
+  margin-top: 3px;
+  /*margin-left: 38px;
+  text-overflow: ellipsis;
+  overflow: hidden;*/
+}
+.rec-row-desc-wide {
+	margin-left: 45px;
+}
+.recf-creator {
+	white-space: nowrap;
+}
+
+.rec-scrol-div {
+  height: 83px;
+  overflow: auto;
+  user-select: none;
+  background-color: white;
+}
+
+.rec-name-item {
+  float: left;
+  margin: 3px;
+  border-radius: 4px;
+}
+
+.rec-name-item:hover {
+  background-color: #dddddd;
+}
+
+.rec-name-item label {
+  display: block;
+  height: 100%;
+  width: 100%;
+  padding: 3px 5px 3px 3px;
+}
+
+.rec-name-item input {
+  vertical-align: middle;
+}
+
+.rec-add {
+  width: 100%;
+}
+
+.rec-add-input {
+  width: 100%;
+}
+
+.rec-add-button {
+}
+.rec-grp-button, .rec-csv-button {
+  margin-left: 4px;
+}
+
+.rec-add-button .small_button,
+.rec-grp-button .small_button,
+.rec-csv-button .small_button
+ {
+  height: 36px;
+  width: 25px;
+}
+
+.rec-add-button button {
+  width: 75px;
+  display: none;
+}
+
+.student-name{
+	font-size: 110%;
+}
+.student-id{
+	opacity: 67%;
+	font-size: 80%;
+}
+
+.rec-user-actions {
+  position: relative;
+  width: 100%;
+}
+
+.rec-user-actions td {
+  vertical-align: top;
+  height: 100%;
+}
+
+.rec-user-actions td:not(:first-child) {
+  padding-left: 5px;
+}
+
+.rec-user-actions button {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.rec-user-actions {
+  width: 100%;
+}
+
+.rec-title {
+  width: 100%;
+  padding: 2px;
+  box-sizing: border-box;
+}
+
+.rec-message {
+  width: 100%;
+  font-family: Arial;
+  /*font-size: inherit;*/
+}
+
+.rec-recent table {
+  width: 100%;
+}
+
+.rec-label-cell {
+  width: 16%;
+  padding: 0 6px 0 0;
+  white-space: nowrap;
+}
+
+.rec-recent select {
+  width: 100%;
+}
+
+.rec-groups-row {
+	display: none;
+}
+
+.rec-tags {
+  margin: 10px 4px 0 0;
+}
+
+.rec-tags table {
+  width: 100%;
+}
+
+.rec-tags input {
+  width: 100%;
+}
+
+.rec-option {
+  margin: 8px 0 0 0;
+}
+
+.rec-option input {
+  vertical-align: middle;
+  margin-left: 0;
+}
+
+.rec-groups {
+  margin: 8px 4px 0 0;
+}
+
+.rec-groups table {
+  width: 100%;
+}
+
+.rec-groups table td {
+  white-space: nowrap;
+}
+
+.rec-groups input {
+  width: 100%;
+}
+
+.rec-bottom {
+  margin-top: 8px;
+  text-align: right;
+}
+
+.rec-bottom button {
+    margin: 0 0px 6px 2px;
+}
+
+.rec-disabled {
+	pointer-events: none;
+    opacity: .8;
+}
+
+.rec-disabled .rec-disabled-message {
+	opacity: 1;
+}
+
+.rec-disabled-message{
+	opacity: 0;
+	color: #800;
+}
+
+body .ui-tooltip {
+    border-width: 2px;
+    background-color: white;
+}
+
+.rec-but-save {
+	width: 80px;
+}
+
+.selectize-dropdown .active.create {
+  	color: #FFF;
+}
+
+.selectize-dropdown .active {
+  color: #000000;
+  background-color: #DADCE0;
+}
+
+.selectize-dropdown .active .highlight {
+	color: #000000;
+	background-color: #FFEEAA;
+	font-weight: bold;
+}
+
+.mandatory-rec .skip-rec-div {
+	display:none;
+}
+.skip-rec-div-advisor {
+	display:none;
+}
+.mandatory-rec .skip-rec-div-advisor {
+	display:block;
+}
+.compulsory-recommendation-text {
+	display:none;
+}
+.mandatory-rec .compulsory-recommendation-text {
+	display:block;
+}
+.mandatory-rec .optional-recommendation-text {
+	display:none;
+}
+.rec-advising-warning{
+	margin-top: 10px;
+	text-align: center;
+	opacity: .8;
+}
+
+#recAddWarning {
+	text-align: center;
+	color: orange;
+	display:none;
+}
+
+#rec-import-progress {
+    margin: 5px 0 5px 0;
+    overflow: auto;
+	display: flex;
+    flex-direction: column;
+    align-items: center;    
+}
+
+#rec-import-progress .cbox {
+    padding: 5px;
+    margin: 5px;
+    max-width: 600px;
+    min-width: 350px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    height: 25px;
+    overflow: hidden;
+    cursor: pointer;
+    flex-direction:column;
+}
+
+.import-status .header {
+	display: flex;
+    width: 100%;
+}
+
+.import-status .warnings{
+	color:#ef6c00;
+	flex-grow: 1;
+	margin-top:5px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.importType {
+	opacity: .5;
+    font-size: .8em;
+    margin: 1px 8px 0px -1px;
+     width: 64px;
+}
+#rec-import-progress .sub-header{
+    display: flex;
+    width: 100%;
+    justify-content: space-between;
+    margin-top: 4px;
+}
+#rec-import-progress .sub-header .field{
+	opacity: .6;
+	font-size:.9em;
+}
+#rec-import-progress .sub-header .value{
+	margin-left: 2px;
+}

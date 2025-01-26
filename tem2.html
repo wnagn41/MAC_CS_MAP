@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>课程依赖关系可视化系统</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    /* 基础布局样式 */
+    body { margin: 0; padding: 20px; font-family: Arial; }
+    .container {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 20px;
+      height: 90vh;
+    }
+    #sidebar {
+      border-right: 2px solid #eee;
+      padding-right: 20px;
+      overflow-y: auto;
+    }
+    .layer-group { margin-bottom: 20px; }
+    label { display: block; padding: 5px; }
+    #chart {
+      border: 1px solid #eee;
+      border-radius: 8px;
+      background: white;
+    }
+    
+    /* 节点样式 */
+    .node { 
+      cursor: move; 
+      transition: r 0.2s;  /* 悬停动画 */
+    }
+    .node:hover { r: 14 }   /* 悬停效果 */
+    .fixed-node { 
+      stroke: #ff4444; 
+      stroke-width: 3;
+    }
+    
+    /* 连接线样式 */
+    .link {
+      stroke: #999;
+      stroke-opacity: 0.6;
+      stroke-linecap: round;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="container">
+      <!-- 左侧课程选择侧边栏 -->
+      <div id="sidebar">
+        <h2>课程选择</h2>
+        <div v-for="layer in [3, 2, 1]" :key="layer" class="layer-group">
+          <h3>第 {{ layer }} 层</h3>
+          <div v-for="course in getLayerCourses(layer)" :key="course.id">
+            <label>
+              <input type="checkbox" 
+                     v-model="selectedCourses" 
+                     :value="course.id"
+                     :disabled="layer <= 0">
+              {{ course.id }}
+            </label>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 右侧可视化图表容器 -->
+      <div id="chart"></div>
+    </div>
+  </div>
+
+<script>
+const { createApp } = Vue;
+
+// 课程数据配置（包含固定节点坐标）
+const courses = [
+  // Layer 1 - 基础课程（固定位置）
+  {id: 'COMPSCI 1DM3', layer: 1, fixed: true, x: 100, y: 150},
+  {id: 'COMPSCI 1JC3', layer: 1, fixed: true, x: 300, y: 50},
+  {id: 'COMPSCI 1MD3', layer: 1, fixed: true, x: 500, y: 50},
+  {id: 'COMPSCI 1XC3', layer: 1, fixed: true, x: 400, y: 150},
+  {id: 'COMPSCI 1XD3', layer: 1, fixed: true, x: 700, y: 150},
+  {id: 'MATH 1B03', layer: 1, fixed: true, x: 800, y: 250},
+  
+  // Layer 2 - 中级课程
+  {id: 'COMPSCI 2AC3', layer: 2},
+  {id: 'COMPSCI 2C03', layer: 2},
+  {id: 'COMPSCI 2DB3', layer: 2},
+  {id: 'COMPSCI 2GA3', layer: 2},
+  {id: 'COMPSCI 2LC3', layer: 2},
+  {id: 'COMPSCI 2ME3', layer: 2},
+  {id: 'COMPSCI 2SD3', layer: 2},
+  {id: 'COMPSCI 2XC3', layer: 2},
+  {id: 'STATS 2D03', layer: 2, fixed: true, x: 50, y: 250},
+  
+  // Layer 3 - 高级课程
+  {id: 'COMPSCI 3AC3', layer: 3},
+  {id: 'COMPSCI 3DM3', layer: 3},
+  {id: 'COMPSCI 3DP3', layer: 3},
+  {id: 'COMPSCI 3EA3', layer: 3},
+  {id: 'COMPSCI 3GC3', layer: 3},
+  {id: 'COMPSCI 3MI3', layer: 3},
+  {id: 'COMPSCI 3N03', layer: 3},
+  {id: 'COMPSCI 3RA3', layer: 3},
+  {id: 'COMPSCI 3TB3', layer: 3},
+  {id: 'COMPSCI 3SH3', layer: 3},
+  {id: 'COMPSCI 3VA3', layer: 3},
+  {id: 'COMPSCI 4E03', layer: 3},
+  {id: 'COMPSCI 4EN3', layer: 3},
+  {id: 'COMPSCI 4HC3', layer: 3},
+  {id: 'COMPSCI 4ML3', layer: 3},
+  {id: 'COMPSCI 4O03', layer: 3},
+  {id: 'COMPSCI 4X03', layer: 3},
+  {id: 'COMPSCI 4Z03', layer: 3},
+//   {id: 'COMPSCI 4ZP6A/B', layer: 3},
+  {id: 'COMPSCI 4AL3', layer: 3},
+  {id: 'COMPSCI 4CR3', layer: 3},
+  {id: 'COMPSCI 4SD3', layer: 3},
+  {id: 'COMPSCI 4NL3', layer: 3}
+];
+
+// 课程先决条件关系配置
+const prerequisites = {
+  'COMPSCI 1XC3': ['COMPSCI 1MD3'],
+  'COMPSCI 1XD3': ['COMPSCI 1JC3', 'COMPSCI 1MD3'],
+  'COMPSCI 2AC3': ['COMPSCI 2LC3', 'COMPSCI 2C03'],
+  'COMPSCI 2C03': ['COMPSCI 1DM3', 'COMPSCI 1XC3'],
+  'COMPSCI 2DB3': ['COMPSCI 2LC3'],
+  'COMPSCI 2GA3': ['COMPSCI 1MD3'],
+  'COMPSCI 2LC3': ['COMPSCI 1DM3', 'COMPSCI 1MD3'],
+  'COMPSCI 2ME3': ['COMPSCI 1XC3', 'COMPSCI 1XD3'],
+  'COMPSCI 2SD3': ['COMPSCI 2C03', 'COMPSCI 2LC3', 'COMPSCI 2ME3'],
+  'COMPSCI 2XC3': ['COMPSCI 1XC3', 'COMPSCI 1XD3', 'COMPSCI 2C03', 'COMPSCI 2ME3'],
+  'COMPSCI 3AC3': ['COMPSCI 2C03', 'COMPSCI 2AC3'],
+  'COMPSCI 3DM3': ['COMPSCI 2DB3', 'COMPSCI 2C03', 'COMPSCI 2ME3', 'STATS 2D03'],
+  'COMPSCI 3DP3': ['COMPSCI 2C03', 'STATS 2D03', 'MATH 1B03'],
+  'COMPSCI 3EA3': ['COMPSCI 2LC3', 'COMPSCI 2AC3', 'COMPSCI 2ME3', 'COMPSCI 2SD3'],
+  'COMPSCI 3GC3': ['MATH 1B03', 'COMPSCI 2C03'],
+  'COMPSCI 3MI3': ['COMPSCI 2C03', 'COMPSCI 2LC3', 'COMPSCI 2AC3', 'COMPSCI 2ME3'],
+  'COMPSCI 3N03': ['COMPSCI 3SH3'],
+  'COMPSCI 3RA3': ['COMPSCI 2AC3', 'COMPSCI 2ME3'],
+  'COMPSCI 3TB3': ['COMPSCI 2C03', 'COMPSCI 2AC3', 'COMPSCI 2GA3', 'COMPSCI 3MI3'],
+  'COMPSCI 3SH3': ['COMPSCI 2SD3', 'COMPSCI 2C03', 'COMPSCI 2GA3'],
+  'COMPSCI 4E03': ['STATS 2D03'],
+  'COMPSCI 4HC3': ['COMPSCI 2C03'],
+  'COMPSCI 4ML3': ['COMPSCI 2C03', 'STATS 2D03', 'COMPSCI 4O03'],
+  'COMPSCI 4O03': ['COMPSCI 2C03'],
+  'COMPSCI 3VA3': ['COMPSCI 1XD3', 'COMPSCI 2C03', 'COMPSCI 2DB3'],
+  'COMPSCI 4AL3': ['COMPSCI 2C03', 'COMPSCI 2ME3', 'STATS 2D03'],
+  'COMPSCI 4CR3': ['MATH 1B03', 'COMPSCI 1DM3', 'COMPSCI 2C03'],
+  'COMPSCI 4SD3': ['COMPSCI 2C03', 'STATS 2D03'],
+  'COMPSCI 4NL3': ['COMPSCI 2C03', 'MATH 1B03', 'STATS 2D03']
+};
+
+function selectCourse(course, selectedCourses = new Set()) {
+    if (selectedCourses.has(course)) return;
+
+    // 标记当前课程为已选择
+    selectedCourses.add(course);
+
+    // 获取当前课程的前置课程
+    const prerequisites = courses[course] || [];
+
+    // 递归选择所有前置课程
+    prerequisites.forEach(prerequisite => selectCourse(prerequisite, selectedCourses));
+}
+
+createApp({
+  data() {
+    return {
+      courses: courses,
+      prerequisites: prerequisites,
+      selectedCourses: [],
+      simulation: null
+    }
+  },
+  
+  mounted() {
+    // 初始化默认选中第1、2层课程
+    this.selectedCourses = this.courses
+      .filter(c => c.layer <= 2)
+      .map(c => c.id);
+    this.updateChart();
+    window.addEventListener('resize', this.debouncedResize);
+  },
+  
+  beforeUnmount() {
+    window.removeEventListener('resize', this.debouncedResize);
+  },
+  
+  watch: {
+    selectedCourses() {
+      this.updateChart();
+    }
+  },
+  
+  methods: {
+    // 获取指定层级的课程（倒序排列）
+    getLayerCourses(layer) {
+      return this.courses
+        .filter(c => c.layer === layer)
+        .sort((a, b) => b.id.localeCompare(a.id));
+    },
+
+    // 递归获取所有前置课程（深度优先遍历）
+    getAllPrerequisites(courseId, visited = new Set()) {
+      if (visited.has(courseId)) return visited;
+      visited.add(courseId);
+
+      const prereqs = this.prerequisites[courseId] || [];
+      prereqs.forEach(preId => {
+        this.getAllPrerequisites(preId, visited);
+      });
+      
+      return visited;
+    },
+
+    // 处理节点点击事件
+    handleNodeClick(courseId) {
+      const requirements = this.getAllPrerequisites(courseId);
+      this.selectedCourses = [
+        ...new Set([...this.selectedCourses, ...requirements])
+      ];
+    },
+
+    // 更新图表核心方法
+    updateChart() {
+      // 清理旧图表
+      d3.select("#chart").selectAll("*").remove();
+
+      // 准备可视化数据
+      const visibleNodes = this.courses
+        .filter(c => this.selectedCourses.includes(c.id))
+        .map(d => ({
+          ...d,
+          fx: d.fixed ? d.x : null,
+          fy: d.fixed ? d.y : null
+        }));
+
+      const visibleLinks = [];
+      Object.entries(this.prerequisites).forEach(([target, sources]) => {
+        if (this.selectedCourses.includes(target)) {
+          sources.forEach(source => {
+            if (this.selectedCourses.includes(source)) {
+              visibleLinks.push({ source, target });
+            }
+          });
+        }
+      });
+
+      // 获取容器尺寸
+      const width = 0.8*document.getElementById('chart').clientWidth;
+      const height = 0.8*document.getElementById('chart').clientHeight;
+
+      // 创建SVG画布
+      const svg = d3.select("#chart")
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height)
+        .attr("viewBox", [0, 0, width, height]);
+
+      // 创建箭头标记
+      svg.append("defs").append("marker")
+        .attr("id", "arrow")
+        .attr("viewBox", "0 -5 10 10")
+        .attr("refX", 25)
+        .attr("refY", 0)
+        .attr("markerWidth", 8)
+        .attr("markerHeight", 8)
+        .attr("orient", "auto")
+        .append("path")
+        .attr("d", "M0,-5 L10,0 L0,5")
+        .attr("fill", "#666");
+
+      // 初始化力导向模拟
+      const simulation = d3.forceSimulation(visibleNodes)
+        .velocityDecay(0.8)  // 新增这行（默认值是0.4）
+        .force("charge", d3.forceManyBody().strength(-250)
+        )
+        .force("link", d3.forceLink(visibleLinks)
+          .id(d => d.id)
+          .distance(100)
+        )
+        .force("charge", d3.forceManyBody()
+          .strength(d => d.fixed ? 0 : -600)
+        )
+        .force("center", d3.forceCenter(width/2, height/2))
+        .force("x", d3.forceX()
+          .x(d => d.fixed ? d.x : width/2)
+          .strength(d => d.fixed ? 0.5 : 0.1)
+        )
+        .force("y", d3.forceY()
+          .y(d => d.fixed ? d.y : d.layer * 150)
+          .strength(d => d.fixed ? 0.5 : 0.1)
+        );
+
+      // 绘制连接线
+      const links = svg.append("g")
+        .selectAll("line")
+        .data(visibleLinks)
+        .join("line")
+        .attr("class", "link")
+        .attr("stroke-width", 2)
+        .attr("marker-end", "url(#arrow)");
+
+      // 绘制节点
+      const nodes = svg.append("g")
+        .selectAll("circle")
+        .data(visibleNodes)
+        .join("circle")
+        .attr("class", d => d.fixed ? "node fixed-node" : "node")
+        .attr("r", 12)
+        .attr("fill", d => d3.interpolateRainbow(d.layer/4))
+        .on("click", (event, d) => this.handleNodeClick(d.id))
+        .call(d3.drag()
+          .on("start", event => !event.subject.fixed && this.dragstarted(event))
+          .on("drag", event => !event.subject.fixed && this.dragged(event))
+          .on("end", event => !event.subject.fixed && this.dragended(event)));
+
+      // 添加课程标签
+      const labels = svg.append("g")
+        .selectAll("text")
+        .data(visibleNodes)
+        .join("text")
+        .text(d => d.id)
+        .attr("font-size", 10)
+        .attr("dx", 15)
+        .attr("dy", 4)
+        .style("user-select", "none")
+        .style("pointer-events", "none");
+
+      // 力模拟更新处理
+      simulation.on("tick", () => {
+        links
+          .attr("x1", d => d.source.x)
+          .attr("y1", d => d.source.y)
+          .attr("x2", d => d.target.x)
+          .attr("y2", d => d.target.y);
+
+        nodes
+          .attr("cx", d => d.x)
+          .attr("cy", d => d.y);
+
+        labels
+          .attr("x", d => d.x)
+          .attr("y", d => d.y);
+      });
+
+      this.simulation = simulation;
+    },
+
+    // 拖拽交互处理
+    dragstarted(event) {
+      if (!event.active) this.simulation.alphaTarget(0.3).restart();
+      event.subject.fx = event.subject.x;
+      event.subject.fy = event.subject.y;
+    },
+    dragged(event) {
+      // 获取窗口的宽度和高度
+      const width = 1.5*window.innerWidth;
+      const height = 1.5*window.innerHeight;
+
+      // 限制节点的 x 坐标在窗口宽度范围内
+      event.subject.fx = Math.max(0, Math.min(width, event.x));
+
+      // 限制节点的 y 坐标在窗口高度范围内
+      event.subject.fy = Math.max(0, Math.min(height, event.y));
+    },
+    dragended(event) {
+      if (!event.active) this.simulation.alphaTarget(0);
+      event.subject.fx = event.subject.x;
+      event.subject.fy = event.subject.y;
+    },
+
+    // 防抖函数
+    debounce(func, wait = 100) {
+      let timeout;
+      return (...args) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+      };
+    },
+
+    // 响应式布局处理
+    debouncedResize() {
+      this.debounce(() => {
+        if (!this.simulation) return;
+        const width = document.getElementById('chart').clientWidth;
+        const height = document.getElementById('chart').clientHeight;
+        
+        this.simulation.force("center", d3.forceCenter(width/2, height/2));
+        this.simulation.alpha(0.3).restart();
+      })();
+    }
+  }
+}).mount('#app');
+</script>
+</body>
+</html>

@@ -3,12 +3,12 @@
 
   <head>
   <meta charset="utf-8">
-  <title>课程依赖关系可视化系统</title>
+  <title>Course Dependency Visualization System</title>
   <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <style>
     /* 基础布局样式 */
-    body { margin: 0; padding: 20px; font-family: Arial; }
+    body { margin: 0; padding: 20px; font-family: Arial; background-color: #7A003C; }
     .container {
       display: grid;
       grid-template-columns: 300px 1fr;
@@ -16,12 +16,15 @@
       height: 90vh;
     }
     #sidebar {
-      border-right: 2px solid #eee;
+      border-right: 2px solid #000000;
       padding-right: 20px;
       overflow-y: auto;
+      background-color: #ffffff;
+      border-radius: 8px;
+      padding: 15px;
     }
     .layer-group { margin-bottom: 20px; }
-    label { display: block; padding: 5px; }
+    label { display: block; padding: 5px; color: #000000; }
     #chart {
       border: 1px solid #eee;
       border-radius: 8px;
@@ -31,12 +34,12 @@
     /* 节点样式 */
     .node { 
       cursor: move; 
-      transition: r 0.2s;  /* 悬停动画 */
+      transition: r 0.4s;  /* 悬停动画 */
     }
     .node:hover { r: 14 }   /* 悬停效果 */
     .fixed-node { 
       stroke: #ff4444; 
-      stroke-width: 3;
+      stroke-width: 4;
     }
     
     /* 连接线样式 */
@@ -52,9 +55,9 @@
     <div class="container">
       <!-- 左侧课程选择侧边栏 -->
       <div id="sidebar">
-        <h2>课程选择</h2>
+        <h2>Course Selection</h2>
         <div v-for="layer in [3, 2, 1]" :key="layer" class="layer-group">
-          <h3>第 {{ layer }} 层</h3>
+          <h3>The {{ layer }} year courses</h3>
           <div v-for="course in getLayerCourses(layer)" :key="course.id">
             <label>
               <input type="checkbox" 
@@ -206,17 +209,7 @@ createApp({
     },
 
     // 递归获取所有前置课程（深度优先遍历）
-    getAllPrerequisites(courseId, visited = new Set()) {
-      if (visited.has(courseId)) return visited;
-      visited.add(courseId);
 
-      const prereqs = this.prerequisites[courseId] || [];
-      prereqs.forEach(preId => {
-        this.getAllPrerequisites(preId, visited);
-      });
-      
-      return visited;
-    },
 
     // 处理节点点击事件
     handleNodeClick(courseId) {
@@ -252,8 +245,8 @@ createApp({
       });
 
       // 获取容器尺寸
-      const width = 0.8*document.getElementById('chart').clientWidth;
-      const height = 0.8*document.getElementById('chart').clientHeight;
+      const width = document.getElementById('chart').clientWidth;
+      const height = document.getElementById('chart').clientHeight;
 
       // 创建SVG画布
       const svg = d3.select("#chart")
@@ -278,24 +271,16 @@ createApp({
       // 初始化力导向模拟
       const simulation = d3.forceSimulation(visibleNodes)
         .velocityDecay(0.8)  // 新增这行（默认值是0.4）
-        .force("charge", d3.forceManyBody().strength(-250)
-        )
         .force("link", d3.forceLink(visibleLinks)
           .id(d => d.id)
           .distance(100)
+          .strength(1.9)
         )
-        .force("charge", d3.forceManyBody()
-          .strength(d => d.fixed ? 0 : -600)
+        .force("charge", d3.forceManyBody().strength(-250)
         )
-        .force("center", d3.forceCenter(width/2, height/2))
-        .force("x", d3.forceX()
-          .x(d => d.fixed ? d.x : width/2)
-          .strength(d => d.fixed ? 0.5 : 0.1)
-        )
-        .force("y", d3.forceY()
-          .y(d => d.fixed ? d.y : d.layer * 150)
-          .strength(d => d.fixed ? 0.5 : 0.1)
-        );
+        // .force("center", d3.forceCenter(width/2, height/2))
+        .force("x", d3.forceX(width/2).strength(0.9))
+        .force("y", d3.forceY(90*height/100).strength(0.9));
 
       // 绘制连接线
       const links = svg.append("g")
@@ -326,7 +311,7 @@ createApp({
         .data(visibleNodes)
         .join("text")
         .text(d => d.id)
-        .attr("font-size", 10)
+        .attr("font-size", 19)
         .attr("dx", 15)
         .attr("dy", 4)
         .style("user-select", "none")
@@ -360,8 +345,8 @@ createApp({
     },
     dragged(event) {
       // 获取窗口的宽度和高度
-      const width = 1.5*window.innerWidth;
-      const height = 1.5*window.innerHeight;
+      const width = window.innerWidth;
+      const height = window.innerHeight;
 
       // 限制节点的 x 坐标在窗口宽度范围内
       event.subject.fx = Math.max(0, Math.min(width, event.x));
